@@ -70,6 +70,11 @@ import { resolveTimeout, formatTimeout } from "../../shared/cascading-timeout.ts
 import { shouldRetry, sleep } from "../../shared/retry-logic.ts";
 import { resolveTraceRunId, buildTraceEnv, writePidFile, removePidFile, resolveSpawnDepth } from "../../shared/trace-propagation.ts";
 import { buildDomainEnv } from "../../shared/domain-enforcement.ts";
+import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CHILD_DOMAIN_GUARD_PATH = join(__dirname, "child-domain-guard.ts");
 
 const artifactOutputByResult = new WeakMap<SingleResult, string>();
 const acceptanceOutputByResult = new WeakMap<SingleResult, string>();
@@ -156,8 +161,13 @@ async function runSingleAttempt(
 	},
 ): Promise<SingleResult> {
 	const modelArg = applyThinkingSuffix(model, agent.thinking);
+
+		// Inject child domain guard when domain rules are configured
+		const hasDomainRules = options.domain && options.domain.length > 0;
+		const domainGuardArgs = hasDomainRules ? ["-e", CHILD_DOMAIN_GUARD_PATH] : [];
+
 		const { args, env: sharedEnv, tempDir } = buildPiArgs({
-		baseArgs: ["--mode", "json", "-p"],
+		baseArgs: ["--mode", "json", "-p", ...domainGuardArgs],
 		task,
 		sessionEnabled: shared.sessionEnabled,
 		sessionDir: options.sessionDir,

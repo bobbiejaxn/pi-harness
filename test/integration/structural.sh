@@ -89,6 +89,21 @@ for fn in createStreamProcessor StreamCallbacks onToolCallStart onUsage; do
 done
 
 echo ""
+echo "── Child domain guard ──"
+if [ -f "$SRC/runs/foreground/child-domain-guard.ts" ]; then
+  check "child-domain-guard.ts exists" "pass"
+  grep -q 'pi.on("tool_call"' "$SRC/runs/foreground/child-domain-guard.ts" && check "Hooks pi.on(tool_call)" "pass" || check "Hooks pi.on(tool_call)" "fail"
+  grep -q 'AGENT_DOMAIN_RULES' "$SRC/runs/foreground/child-domain-guard.ts" && check "Reads AGENT_DOMAIN_RULES" "pass" || check "Reads AGENT_DOMAIN_RULES" "fail"
+  grep -q 'AGENT_EXPERTISE' "$SRC/runs/foreground/child-domain-guard.ts" && check "Reads AGENT_EXPERTISE" "pass" || check "Reads AGENT_EXPERTISE" "fail"
+  grep -q 'AGENT_ALLOWED_TOOLS' "$SRC/runs/foreground/child-domain-guard.ts" && check "Reads AGENT_ALLOWED_TOOLS" "pass" || check "Reads AGENT_ALLOWED_TOOLS" "fail"
+  grep -q 'BASH_WRITE_PATTERNS\|BASH_DELETE_PATTERNS' "$SRC/runs/foreground/child-domain-guard.ts" && check "Bash heuristic patterns" "pass" || check "Bash heuristics" "fail"
+  grep -q 'CHILD_DOMAIN_GUARD_PATH' "$SRC/runs/foreground/execution.ts" && check "Guard path in execution.ts" "pass" || check "Guard path in execution.ts" "fail"
+  grep -q 'domainGuardArgs' "$SRC/runs/foreground/execution.ts" && check "Guard injected into baseArgs" "pass" || check "Guard in baseArgs" "fail"
+else
+  check "child-domain-guard.ts exists" "fail"
+fi
+
+echo ""
 echo "── Config types ──"
 grep -q "domain.*DomainRule\|allowedTools" "$TYPES" && check "domain/allowedTools in types" "pass" || check "types" "fail"
 grep -q "cost.*CostGuard\|retry.*Retry\|timeout.*Timeout" "$TYPES" && check "cost/retry/timeout in types" "pass" || check "cost/retry/timeout types" "fail"
