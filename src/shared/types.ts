@@ -829,6 +829,12 @@ export interface RunSyncOptions {
 
 	/** Execution guard config: turn limits, repetition detection, stall detection. */
 	executionGuard?: import("./execution-guard.ts").ExecutionGuardConfig;
+
+	/** Circuit breaker config: per-agent failure tracking with cooldown. */
+	circuitBreaker?: import("./circuit-breaker.ts").CircuitBreakerConfig;
+
+	/** Merge resolver config: tiered conflict resolution for worktree merges. */
+	mergeResolver?: import("./merge-resolver.ts").MergeResolverOptions;
 }
 
 export type IntercomBridgeMode = "off" | "fork-only" | "always";
@@ -894,6 +900,12 @@ export interface ExtensionConfig {
 
 	/** Execution guard config: turn limits, repetition detection, stall detection. */
 	executionGuard?: import("./execution-guard.ts").ExecutionGuardConfig;
+
+	/** Circuit breaker config: per-agent failure tracking with cooldown. */
+	circuitBreaker?: import("./circuit-breaker.ts").CircuitBreakerConfig;
+
+	/** Merge resolver config: tiered conflict resolution for worktree merges. */
+	mergeResolver?: import("./merge-resolver.ts").MergeResolverOptions;
 }
 
 // ============================================================================

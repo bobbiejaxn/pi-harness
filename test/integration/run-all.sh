@@ -52,6 +52,8 @@ run_test "Full Pipeline E2E" "$SCRIPT_DIR/live-e2e.sh" 90
 run_test "Cost Guard Kill" "$SCRIPT_DIR/live-cost-guard.sh" 120
 run_test "Cascading Timeout" "$SCRIPT_DIR/live-timeout.sh" 120
 run_test "Session Budget" "$SCRIPT_DIR/live-session-budget.sh" 150
+run_test "Circuit Breaker" "$SCRIPT_DIR/live-circuit-breaker.sh" 60
+run_test "Execution Guard" "$SCRIPT_DIR/live-execution-guard.sh" 30
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

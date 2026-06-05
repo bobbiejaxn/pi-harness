@@ -15,8 +15,8 @@ import { buildDoctorReport } from "../../extension/doctor.ts";
 import { clearPendingForegroundControlNotices } from "../../extension/control-notices.ts";
 import { runSync } from "./execution.ts";
 import type { CircuitBreaker } from "../../shared/circuit-breaker.ts";
-import type { SessionLearner } from "../../shared/session-learner.ts";
-import type { SingleResult } from "../../shared/types.ts";
+import type { SessionLearner, RunHint } from "../../shared/session-learner.ts";
+import { resolveMerge, type MergeResolverOptions, type MergeResolutionResult } from "../../shared/merge-resolver.ts";
 import { resolveModelCandidate } from "../shared/model-fallback.ts";
 import { aggregateParallelOutputs } from "../shared/parallel-utils.ts";
 import { recordRun } from "../shared/run-history.ts";
@@ -166,6 +166,7 @@ interface ExecutorDeps {
 	// Circuit Breaker & Execution Guard
 	circuitBreaker?: import("../../shared/circuit-breaker.ts").CircuitBreaker;
 	sessionLearner?: import("../../shared/session-learner.ts").SessionLearner;
+	mergeResolverOptions?: import("../../shared/merge-resolver.ts").MergeResolverOptions;
 }
 
 interface ExecutionContextData {
@@ -1433,6 +1434,72 @@ function buildChainWorktreeTaskCwdError(chain: ChainStep[], sharedCwd: string): 
 	return undefined;
 }
 
+/** Merge successful worktree branches back into the source branch. */
+async function mergeWorktreeResults(
+	repoRoot: string,
+	worktreeSetup: WorktreeSetup,
+	results: SingleResult[],
+	options?: MergeResolverOptions,
+): Promise<Array<{ index: number; result: MergeResolutionResult | null }>> {
+	const mergeResults: Array<{ index: number; result: MergeResolutionResult | null }> = [];
+	const sourceBranch = WorktreeManager_getCurrentBranch(repoRoot);
+
+	for (let i = 0; i < results.length; i++) {
+		const result = results[i]!;
+		if (result.exitCode !== 0) {
+			mergeResults.push({ index: i, result: null });
+			continue;
+		}
+
+		const wt = worktreeSetup.worktrees[i];
+		if (!wt) {
+			mergeResults.push({ index: i, result: null });
+			continue;
+		}
+
+		try {
+			// Get files modified in this worktree branch
+			const { execSync } = await import("node:child_process");
+			let filesModified: string[] = [];
+			try {
+				const base = execSync(
+					`git merge-base ${sourceBranch} ${wt.branch}`,
+					{ cwd: repoRoot, encoding: "utf-8" },
+				).trim();
+				filesModified = execSync(
+					`git diff --name-only ${base} ${wt.branch}`,
+					{ cwd: repoRoot, encoding: "utf-8" },
+				).trim().split("\n").filter(Boolean);
+			} catch { /* best effort */ }
+
+			const mergeResult = await resolveMerge(
+				repoRoot,
+				wt.branch,
+				sourceBranch,
+				filesModified,
+				options,
+			);
+			mergeResults.push({ index: i, result: mergeResult });
+		} catch {
+			mergeResults.push({ index: i, result: null });
+		}
+	}
+
+	return mergeResults;
+}
+
+/** Get current branch name. */
+function WorktreeManager_getCurrentBranch(repoRoot: string): string {
+	try {
+		const { execSync } = require("node:child_process");
+		return execSync("git rev-parse --abbrev-ref HEAD", {
+			cwd: repoRoot, encoding: "utf-8",
+		}).trim();
+	} catch {
+		return "main";
+	}
+}
+
 function resolveParallelTaskCwd(
 	task: TaskParam,
 	paramsCwd: string,
@@ -1509,6 +1576,9 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
 			};
 		}
 		const agentConfig = input.agents.find((agent) => agent.name === task.agent);
+
+		// Session learner: get hint for this agent/task
+		const learnerHint = deps.sessionLearner?.suggest(task.agent, taskText);
 
 		// Circuit breaker: check if agent is blocked
 		const breaker = deps.circuitBreaker;
@@ -1849,6 +1919,29 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 			recordRun(run.agent, taskTexts[i]!, run.exitCode, run.progressSummary?.durationMs ?? 0);
 		}
 
+		// Merge worktree branches for successful tasks
+		if (worktreeSetup) {
+			try {
+				const okResults = results.filter((r, i) => r.exitCode === 0);
+				if (okResults.length > 0) {
+					const mergeResults = await mergeWorktreeResults(
+						effectiveCwd,
+						worktreeSetup,
+						results,
+						deps.mergeResolverOptions,
+					);
+					// Attach merge results to the details
+					for (const mr of mergeResults) {
+						if (mr.result) {
+							(results[mr.index] as SingleResult & { worktreeMerge?: MergeResolutionResult }).worktreeMerge = mr.result;
+						}
+					}
+				}
+			} catch {
+				// Merge is best-effort — don't fail the whole run if merge fails
+			}
+		}
+
 		for (const result of results) {
 			if (result.progress) allProgress.push(result.progress);
 			if (result.artifactPaths) allArtifactPaths.push(result.artifactPaths);
@@ -2093,6 +2186,9 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		}
 		: undefined;
 
+	// Session learner: get hint for this agent/task
+	const learnerHint = deps.sessionLearner?.suggest(params.agent!, task);
+
 	// Circuit breaker: check if agent is blocked
 	const breaker = deps.circuitBreaker;
 	if (breaker && breaker.isBlocked(params.agent!)) {
@@ -2142,11 +2238,20 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		domain: deps.domain,
 		expertise: deps.expertise,
 		allowedTools: deps.allowedTools,
+		// Execution guard with learner-enhanced timeout
+		executionGuard: learnerHint?.suggestedTimeoutMs
+			? { ...(config.executionGuard ?? {}), stallTimeoutMs: learnerHint.suggestedTimeoutMs }
+			: config.executionGuard,
 	});
 
 	// Record result for circuit breaker + session learner
 	deps.circuitBreaker?.record(r.agent, r.exitCode, r.error);
 	deps.sessionLearner?.observe(r);
+
+	// Surface learner escalation if warranted
+	if (learnerHint?.shouldEscalate && learnerHint.escalationReason) {
+		r.error = (r.error ? r.error + "\n" : "") + `⚠️ ${learnerHint.escalationReason}`;
+	}
 
 	if (foregroundControl?.currentIndex === 0) {
 		foregroundControl.interrupt = undefined;

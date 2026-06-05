@@ -319,6 +319,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		// Circuit Breaker & Session Learner
 		circuitBreaker: new CircuitBreaker(config.circuitBreaker),
 		sessionLearner: new SessionLearner(),
+		mergeResolverOptions: config.mergeResolver,
 	});
 
 	pi.registerMessageRenderer<SlashMessageDetails>(SLASH_RESULT_TYPE, (message, options, theme) => {
