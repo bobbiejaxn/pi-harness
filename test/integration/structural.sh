@@ -9,7 +9,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC="/Users/michaelguiao/Projects/active/pi-subagents/src"
+ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+SRC="$ROOT/src"
+PKG="$ROOT/package.json"
 SHARED="$SRC/shared"
 EXEC="$SRC/runs/foreground/execution.ts"
 EXECUTOR="$SRC/runs/foreground/subagent-executor.ts"
@@ -101,6 +103,23 @@ if [ -f "$SRC/runs/foreground/child-domain-guard.ts" ]; then
   grep -q 'domainGuardArgs' "$SRC/runs/foreground/execution.ts" && check "Guard injected into baseArgs" "pass" || check "Guard in baseArgs" "fail"
 else
   check "child-domain-guard.ts exists" "fail"
+fi
+
+echo ""
+echo "── Merge resolver ──"
+if [ -f "$SRC/shared/merge-resolver.ts" ]; then
+  check "merge-resolver.ts exists" "pass"
+  grep -q 'resolveConflictsKeepIncoming' "$SRC/shared/merge-resolver.ts" && check "Keep-incoming resolver" "pass" || check "Keep-incoming" "fail"
+  grep -q 'resolveConflictsUnion' "$SRC/shared/merge-resolver.ts" && check "Union resolver" "pass" || check "Union" "fail"
+  grep -q 'hasContentfulCanonical' "$SRC/shared/merge-resolver.ts" && check "Canonical safety check" "pass" || check "Canonical check" "fail"
+  grep -q 'looksLikeProse' "$SRC/shared/merge-resolver.ts" && check "Prose detection" "pass" || check "Prose detection" "fail"
+  grep -q 'tryCleanMerge' "$SRC/shared/merge-resolver.ts" && check "Tier 1: clean merge" "pass" || check "Tier 1" "fail"
+  grep -q 'tryAutoResolve' "$SRC/shared/merge-resolver.ts" && check "Tier 2: auto-resolve" "pass" || check "Tier 2" "fail"
+  grep -q 'tryAiResolve' "$SRC/shared/merge-resolver.ts" && check "Tier 3: AI resolve" "pass" || check "Tier 3" "fail"
+  grep -q 'tryReimagine' "$SRC/shared/merge-resolver.ts" && check "Tier 4: reimagine" "pass" || check "Tier 4" "fail"
+  grep -q '@mariozechner' "$PKG" && check "Namespace compat: @mariozechner" "pass" || check "@mariozechner compat" "fail"
+else
+  check "merge-resolver.ts exists" "fail"
 fi
 
 echo ""
