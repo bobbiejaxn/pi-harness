@@ -826,6 +826,9 @@ export interface RunSyncOptions {
 
 	/** Tool allowlist for child agent. Empty = all tools. */
 	allowedTools?: string[];
+
+	/** Execution guard config: turn limits, repetition detection, stall detection. */
+	executionGuard?: import("./execution-guard.ts").ExecutionGuardConfig;
 }
 
 export type IntercomBridgeMode = "off" | "fork-only" | "always";
@@ -888,6 +891,9 @@ export interface ExtensionConfig {
 
 	/** Tool allowlist for spawned agents. Empty = all tools (permissive). */
 	allowedTools?: string[];
+
+	/** Execution guard config: turn limits, repetition detection, stall detection. */
+	executionGuard?: import("./execution-guard.ts").ExecutionGuardConfig;
 }
 
 // ============================================================================

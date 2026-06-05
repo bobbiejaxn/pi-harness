@@ -1,17 +1,18 @@
 {
-  "name": "pi-subagents",
-  "version": "0.26.0",
-  "description": "Pi extension for delegating tasks to subagents with chains, parallel execution, and TUI clarification",
-  "author": "Nico Bailon",
+  "name": "pi-harness",
+  "version": "1.0.0",
+  "description": "Production-hardened subagent execution engine for pi — circuit breaker, session learning, execution guard, domain enforcement, cost control",
+  "author": "Bobbie Jackson",
+  "contributors": ["Nico Bailon"],
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicobailon/pi-subagents.git"
+    "url": "git+https://github.com/bobbiejaxn/pi-harness.git"
   },
-  "homepage": "https://github.com/nicobailon/pi-subagents#readme",
+  "homepage": "https://github.com/bobbiejaxn/pi-harness#readme",
   "bugs": {
-    "url": "https://github.com/nicobailon/pi-subagents/issues"
+    "url": "https://github.com/bobbiejaxn/pi-harness/issues"
   },
   "keywords": [
     "pi-package",
@@ -20,10 +21,12 @@
     "subagents",
     "ai",
     "agents",
-    "cli"
+    "cli",
+    "circuit-breaker",
+    "session-learning"
   ],
   "bin": {
-    "pi-subagents": "install.mjs"
+    "pi-harness": "install.mjs"
   },
   "files": [
     "src/**/*.ts",

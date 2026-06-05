@@ -1,20 +1,29 @@
-<p>
-  <img src="https://raw.githubusercontent.com/nicobailon/pi-subagents/main/banner.png" alt="pi-subagents" width="1100">
-</p>
+# pi-harness
 
-# pi-subagents
+Production-hardened subagent execution engine for [pi](https://github.com/nicobailon/pi-coding-agent). Forked from [pi-subagents](https://github.com/nicobailon/pi-subagents) with circuit breaker, session learning, execution guard, domain enforcement, and cost control.
 
-`pi-subagents` lets Pi delegate work to focused child agents. Use it for code review, scouting, implementation, parallel audits, saved workflows, background jobs, and anything else that benefits from a second or third set of model eyes.
+## ⚠️ Project-Level Only
 
-https://github.com/user-attachments/assets/702554ec-faaf-4635-80aa-fb5d6e292fd1
+**This extension installs at PROJECT level, never user-level.**
+
+```
+# ✅ Correct: project-level
+your-project/.pi/extensions/subagent/
+
+# ❌ Never: user-level (conflicts with upstream pi-subagents)
+~/.pi/agent/extensions/subagent/
+```
+
+Both extensions register a tool named `subagent` — pi refuses to load both. Project-level keeps your project's customized harness separate from other projects using vanilla pi-subagents.
 
 ## Installation
 
 ```bash
-pi install npm:pi-subagents
+cd /path/to/your/project
+npx pi-harness
 ```
 
-That is the only required step. You can add optional pieces later.
+This clones the extension to `.pi/extensions/subagent/` in your project. Pi auto-discovers it when you run `pi` in that directory.
 
 ## Try this first
 

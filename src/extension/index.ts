@@ -25,6 +25,8 @@ import { cleanupOldChainDirs } from "../shared/settings.ts";
 import { clearLegacyResultAnimationTimer, renderWidget, renderSubagentResult } from "../tui/render.ts";
 import { SubagentParams } from "./schemas.ts";
 import { createSubagentExecutor, type SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
+import { CircuitBreaker } from "../shared/circuit-breaker.ts";
+import { SessionLearner } from "../shared/session-learner.ts";
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
 import { createResultWatcher } from "../runs/background/result-watcher.ts";
 import { registerSlashCommands } from "../slash/slash-commands.ts";
@@ -314,6 +316,9 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		domain: config.domain,
 		expertise: config.expertise,
 		allowedTools: config.allowedTools,
+		// Circuit Breaker & Session Learner
+		circuitBreaker: new CircuitBreaker(config.circuitBreaker),
+		sessionLearner: new SessionLearner(),
 	});
 
 	pi.registerMessageRenderer<SlashMessageDetails>(SLASH_RESULT_TYPE, (message, options, theme) => {

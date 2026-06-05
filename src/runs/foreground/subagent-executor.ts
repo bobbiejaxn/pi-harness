@@ -14,6 +14,9 @@ import { handleManagementAction } from "../../agents/agent-management.ts";
 import { buildDoctorReport } from "../../extension/doctor.ts";
 import { clearPendingForegroundControlNotices } from "../../extension/control-notices.ts";
 import { runSync } from "./execution.ts";
+import type { CircuitBreaker } from "../../shared/circuit-breaker.ts";
+import type { SessionLearner } from "../../shared/session-learner.ts";
+import type { SingleResult } from "../../shared/types.ts";
 import { resolveModelCandidate } from "../shared/model-fallback.ts";
 import { aggregateParallelOutputs } from "../shared/parallel-utils.ts";
 import { recordRun } from "../shared/run-history.ts";
@@ -160,6 +163,9 @@ interface ExecutorDeps {
 	domain?: import("../../shared/domain-enforcement.ts").DomainRule[];
 	expertise?: import("../../shared/domain-enforcement.ts").ExpertiseEntry[];
 	allowedTools?: string[];
+	// Circuit Breaker & Execution Guard
+	circuitBreaker?: import("../../shared/circuit-breaker.ts").CircuitBreaker;
+	sessionLearner?: import("../../shared/session-learner.ts").SessionLearner;
 }
 
 interface ExecutionContextData {
@@ -1503,6 +1509,21 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
 			};
 		}
 		const agentConfig = input.agents.find((agent) => agent.name === task.agent);
+
+		// Circuit breaker: check if agent is blocked
+		const breaker = deps.circuitBreaker;
+		if (breaker && breaker.isBlocked(task.agent)) {
+			const state = breaker.getState(task.agent);
+			const errorResult: SingleResult = {
+				agent: task.agent,
+				task: taskText,
+				exitCode: 1,
+				error: state.blockReason ?? `Agent "${task.agent}" is circuit-broken`,
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+			};
+			return errorResult;
+		}
+
 		return runSync(input.ctx.cwd, input.agents, task.agent, taskText, {
 			cwd: taskCwd,
 			signal: input.signal,
@@ -1565,6 +1586,11 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
 						});
 					}
 				: undefined,
+		}).then((result: SingleResult) => {
+			// Record result for circuit breaker + session learner
+			deps.circuitBreaker?.record(result.agent, result.exitCode, result.error);
+			deps.sessionLearner?.observe(result);
+			return result;
 		}).finally(() => {
 			if (input.foregroundControl?.currentIndex === index) {
 				input.foregroundControl.interrupt = undefined;
@@ -2067,6 +2093,15 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		}
 		: undefined;
 
+	// Circuit breaker: check if agent is blocked
+	const breaker = deps.circuitBreaker;
+	if (breaker && breaker.isBlocked(params.agent!)) {
+		const state = breaker.getState(params.agent!);
+		return {
+			content: [{ type: "text", text: `⛔ ${state.blockReason ?? `Agent \"${params.agent}\" is circuit-broken`}` }],
+		};
+	}
+
 	const r = await runSync(ctx.cwd, agents, params.agent!, task, {
 		cwd: effectiveCwd,
 		signal,
@@ -2108,6 +2143,11 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		expertise: deps.expertise,
 		allowedTools: deps.allowedTools,
 	});
+
+	// Record result for circuit breaker + session learner
+	deps.circuitBreaker?.record(r.agent, r.exitCode, r.error);
+	deps.sessionLearner?.observe(r);
+
 	if (foregroundControl?.currentIndex === 0) {
 		foregroundControl.interrupt = undefined;
 		foregroundControl.currentActivityState = r.progress?.activityState;

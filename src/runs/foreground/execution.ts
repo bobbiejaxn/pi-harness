@@ -70,6 +70,7 @@ import { resolveTimeout, formatTimeout } from "../../shared/cascading-timeout.ts
 import { shouldRetry, sleep } from "../../shared/retry-logic.ts";
 import { resolveTraceRunId, buildTraceEnv, writePidFile, removePidFile, resolveSpawnDepth } from "../../shared/trace-propagation.ts";
 import { buildDomainEnv } from "../../shared/domain-enforcement.ts";
+import { ExecutionGuard } from "../../shared/execution-guard.ts";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
@@ -254,6 +255,14 @@ async function runSingleAttempt(
 
 	const exitCode = await new Promise<number>((resolve) => {
 		const spawnSpec = getPiSpawnCommand(args);
+
+		// Execution guard: turn limit, repetition, stall detection
+		const guard = new ExecutionGuard({
+			maxTurns: options.executionGuard?.maxTurns,
+			maxRepetitions: options.executionGuard?.maxRepetitions,
+			stallTimeoutMs: options.executionGuard?.stallTimeoutMs,
+		});
+
 		const proc = spawn(spawnSpec.command, spawnSpec.args, {
 			cwd: options.cwd ?? runtimeCwd,
 			env: spawnEnv,
@@ -261,6 +270,14 @@ async function runSingleAttempt(
 			windowsHide: true,
 		});
 		const jsonlWriter = createJsonlWriter(shared.jsonlPath, proc.stdout);
+
+		// Start stall detection timer
+		guard.startStallTimer(() => {
+			result.stopReason = guard.getState().killedBy as string ?? "stall";
+			result.error = `Stall detected: no activity from agent process for too long.`;
+			trySignalChild(proc, "SIGTERM");
+			setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 3000);
+		});
 		let buf = "";
 		let processClosed = false;
 		let settled = false;
@@ -482,6 +499,15 @@ async function runSingleAttempt(
 				return;
 			}
 
+			// Feed event to execution guard (turn limit, repetition, stall)
+			const guardAction = guard.processEvent(evt);
+			if (guardAction?.type === "kill") {
+				result.stopReason = guard.getState().killedBy as string;
+				result.error = guardAction.reason;
+				trySignalChild(proc, "SIGTERM");
+				setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 3000);
+			}
+
 			const now = Date.now();
 			progress.durationMs = now - startTime;
 			progress.lastActivityAt = now;
@@ -627,6 +653,7 @@ async function runSingleAttempt(
 			clearFinalDrainTimers();
 		});
 		proc.on("close", (code, signal) => {
+			guard.destroy();
 			// PID tracking cleanup
 			if (options.traceRunId || traceRunId) {
 				removePidFile(options.traceRunId ?? traceRunId, agent.name);
