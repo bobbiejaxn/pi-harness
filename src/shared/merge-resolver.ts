@@ -22,7 +22,7 @@
  *
  * const result = await resolveMerge(repoRoot, branchName, "main", modifiedFiles, {
  *   aiResolveEnabled: true,
- *   aiModel: "zai/glm-5",
+ *   aiModel: "zai/glm-5",  // override, defaults to PI_MODEL env var
  * });
  *
  * if (result.success) {
@@ -63,7 +63,7 @@ export interface MergeResolverOptions {
 	aiResolveEnabled?: boolean;
 	/** Enable tier 4 (full reimagine). Default: false. */
 	reimagineEnabled?: boolean;
-	/** Model to use for AI resolve. Default: "zai/glm-5". */
+	/** Model to use for AI resolve. Default: uses parent session model, falls back to "zai/glm-5". */
 	aiModel?: string;
 	/** Directory prefixes to auto-commit before merging. Default: [".pi/"]. */
 	statePrefixes?: string[];
@@ -388,7 +388,7 @@ export async function resolveMerge(
 	const {
 		aiResolveEnabled = false,
 		reimagineEnabled = false,
-		aiModel = "zai/glm-5",
+		aiModel = process.env.PI_MODEL ?? "zai/glm-5",
 		statePrefixes = [".pi/"],
 		aiTimeoutMs = 60_000,
 	} = options;

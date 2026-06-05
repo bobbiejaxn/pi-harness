@@ -98,6 +98,7 @@ All optional. Create `.pi/extensions/subagent/config.json`:
 | `circuitBreaker.failureThreshold` | 3 | Block agent after N consecutive failures |
 | `circuitBreaker.cooldownMs` | 30000 | Cooldown before probe attempt |
 | `mergeResolver.aiResolveEnabled` | false | Use LLM for merge conflicts |
+| `mergeResolver.aiModel` | `PI_MODEL` env var, else `zai/glm-5` | Model for AI conflict resolution |
 | `domain` | No restrictions | File path access rules |
 | `allowedTools` | All tools | Tool allowlist for children |
 
