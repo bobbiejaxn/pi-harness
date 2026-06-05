@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveTraceRunId } from "../../shared/trace-propagation.ts";
 import { type AgentConfig, type AgentScope } from "../../agents/agents.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
 import { ChainClarifyComponent, type ChainClarifyResult } from "./chain-clarify.ts";
@@ -150,6 +151,15 @@ interface ExecutorDeps {
 	expandTilde: (p: string) => string;
 	discoverAgents: (cwd: string, scope: AgentScope) => { agents: AgentConfig[] };
 	allowMutatingManagementActions?: boolean;
+	// Cost & Reliability
+	costGuardConfig?: import("../../shared/cost-guard.ts").ResolvedCostGuardConfig;
+	sessionCostTracker?: import("../../shared/cost-guard.ts").SessionCostTracker;
+	retryConfig?: import("../../shared/retry-logic.ts").ResolvedRetryConfig;
+	timeoutConfig?: import("../../shared/cascading-timeout.ts").ResolvedTimeoutConfig;
+	// Domain & Tool Restrictions
+	domain?: import("../../shared/domain-enforcement.ts").DomainRule[];
+	expertise?: import("../../shared/domain-enforcement.ts").ExpertiseEntry[];
+	allowedTools?: string[];
 }
 
 interface ExecutionContextData {
@@ -2086,6 +2096,17 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		skills: effectiveSkills,
 		acceptance: params.acceptance,
 		acceptanceContext: { mode: "single" },
+		// Cost & Reliability
+		costGuard: deps.costGuardConfig,
+		sessionCostTracker: deps.sessionCostTracker,
+		timeoutConfig: deps.timeoutConfig,
+		spawnDepth: parseInt(process.env.PI_TRACE_SPAWN_DEPTH ?? "0", 10) || 0,
+		retryConfig: deps.retryConfig,
+		traceRunId: resolveTraceRunId(),
+		// Domain & Tool Restrictions
+		domain: deps.domain,
+		expertise: deps.expertise,
+		allowedTools: deps.allowedTools,
 	});
 	if (foregroundControl?.currentIndex === 0) {
 		foregroundControl.interrupt = undefined;

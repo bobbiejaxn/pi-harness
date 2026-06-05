@@ -37,6 +37,18 @@ import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "../runs/shared/pi
 import registerFanoutChildSubagentExtension from "./fanout-child.ts";
 import { formatDuration, shortenPath } from "../shared/formatters.ts";
 import { loadConfig } from "./config.ts";
+import { resolveCostGuardConfig, SessionCostTracker } from "../shared/cost-guard.ts";
+import { resolveRetryConfig } from "../shared/retry-logic.ts";
+import { resolveTimeoutConfig } from "../shared/cascading-timeout.ts";
+import { resolveTraceRunId } from "../shared/trace-propagation.ts";
+import { checkAllowedAgent } from "../shared/allowed-agents-guard.ts";
+import {
+	SUBAGENT_RUN_START_EVENT,
+	SUBAGENT_RUN_END_EVENT,
+	SUBAGENT_BUDGET_EXHAUSTED_EVENT,
+	type SubagentRunStartPayload,
+	type SubagentRunEndPayload,
+} from "../shared/subagent-events.ts";
 import {
 	type Details,
 	type SubagentState,
@@ -229,6 +241,19 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 
 	const config = loadConfig();
 	const asyncByDefault = config.asyncByDefault === true;
+	const costGuardConfig = resolveCostGuardConfig(config.cost);
+	const retryConfig = resolveRetryConfig(config.retry);
+	const timeoutConfig = resolveTimeoutConfig(config.timeout);
+	const sessionCostTracker = new SessionCostTracker(costGuardConfig.maxSessionBudget, (total, max) => {
+		// Emit budget exhausted event for observability consumers
+		if (config.emitLifecycleEvents !== false) {
+			pi.events.emit(SUBAGENT_BUDGET_EXHAUSTED_EVENT, {
+				sessionCost: total,
+				sessionBudget: max,
+				skippedAgent: "(next call)",
+			} satisfies SubagentRunEndPayload extends unknown ? Parameters<typeof pi.events.emit>[1] : never);
+		}
+	});
 	const tempArtifactsDir = getArtifactsDir(null);
 	cleanupAllArtifactDirs(DEFAULT_ARTIFACT_CONFIG.cleanupDays);
 
@@ -281,6 +306,14 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		getSubagentSessionRoot,
 		expandTilde,
 		discoverAgents,
+		costGuardConfig,
+		sessionCostTracker,
+		retryConfig,
+		timeoutConfig,
+		// Domain & Tool Restrictions
+		domain: config.domain,
+		expertise: config.expertise,
+		allowedTools: config.allowedTools,
 	});
 
 	pi.registerMessageRenderer<SlashMessageDetails>(SLASH_RESULT_TYPE, (message, options, theme) => {
@@ -531,6 +564,7 @@ DIAGNOSTICS:
 	};
 
 	pi.on("session_start", (_event, ctx) => {
+		sessionCostTracker.reset();
 		resetSessionState(ctx);
 	});
 

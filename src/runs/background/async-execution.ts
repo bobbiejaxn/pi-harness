@@ -40,6 +40,7 @@ import {
 	resolveChildMaxSubagentDepth,
 } from "../../shared/types.ts";
 import { nestedResultsPath, resolveInheritedNestedRouteFromEnv, resolveNestedParentAddressFromEnv, writeNestedEvent } from "../shared/nested-events.ts";
+import { resolveTraceRunId, buildTraceEnv, resolveSpawnDepth, writePidFile, removePidFile } from "../../shared/trace-propagation.ts";
 
 const require = createRequire(import.meta.url);
 const piPackageRoot = resolvePiPackageRoot();
@@ -176,7 +177,7 @@ export function isAsyncAvailable(): boolean {
 /**
  * Spawn the async runner process
  */
-function spawnRunner(cfg: object, suffix: string, cwd: string): { pid?: number; error?: string } {
+function spawnRunner(cfg: object, suffix: string, cwd: string, extraEnv?: Record<string, string>): { pid?: number; error?: string } {
 	if (!jitiCliPath) {
 		return { error: "upstream jiti for TypeScript execution could not be found; ensure package dependencies are installed" };
 	}
@@ -198,6 +199,7 @@ function spawnRunner(cfg: object, suffix: string, cwd: string): { pid?: number; 
 	const proc = spawn(process.execPath, [jitiCliPath, runner, cfgPath], {
 		cwd,
 		detached: true,
+		env: { ...process.env, ...extraEnv },
 		stdio: "ignore",
 		windowsHide: true,
 	});
@@ -500,6 +502,7 @@ export function executeAsyncChain(
 			},
 			id,
 			runnerCwd,
+			buildTraceEnv(resolveTraceRunId(), "async-chain", resolveSpawnDepth()),
 		);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -734,6 +737,7 @@ export function executeAsyncSingle(
 			},
 			id,
 			runnerCwd,
+			buildTraceEnv(resolveTraceRunId(), agent, resolveSpawnDepth()),
 		);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

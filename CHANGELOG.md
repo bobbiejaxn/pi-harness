@@ -2,6 +2,77 @@
 
 ## [Unreleased]
 
+### Added — Cost & Reliability Guards
+
+- **Per-run cost guard** (`config.cost.maxPerRun`, env `PI_SUBAGENT_MAX_COST`): kills subagent process when spend exceeds threshold
+- **Session budget** (`config.cost.maxSessionBudget`, env `PI_SESSION_MAX_COST`): cumulative spend cap across all subagent calls in a session
+- **Cascading timeouts** (`config.timeout`): depth-aware timeouts (15m→10m→5m→3m) with env override `PI_SUBAGENT_TIMEOUT_MS`
+- **Retry with exponential backoff** (`config.retry`): retries on transient errors (429, 503, ETIMEDOUT, rate_limit) with jitter
+- **Allowed-agents guard** (`config.enforceAllowedAgents`): parent agents restrict which children can be spawned via `agents` frontmatter field
+- **Trace propagation** (`config.tracePropagation`): run ID, agent name, and depth propagated via `PI_TRACE_*` env vars
+- **PID tracking**: writes `.pid` files to `~/.pi/agents-live/` for liveness checking
+- **Manifest writing**: per-run JSON manifests in `.pi/traces/runs/`
+- **Subagent logs**: structured JSON logs in `.pi/traces/subagents/`
+
+### Added — Observability Integration
+
+- **Structured lifecycle events** (`config.emitLifecycleEvents`): 7 new event types (`subagent.run_start`, `subagent.run_end`, `subagent.run_retry`, `subagent.cost_checkpoint`, `subagent.budget_exhausted`, `subagent.timeout`, `subagent.manifest_written`) emitted via `pi.events`
+- **Per-turn cost rollup** (`accumulateTurnCost`, `sumTurnRollups`): token/cost accumulation helpers for observability consumers
+- Compatible with [pi-agent-observability](https://github.com/disler/pi-agent-observability) for live dashboard integration
+
+### New Modules
+
+- `src/shared/cost-guard.ts` — CostGuardConfig, SessionCostTracker, checkRunCostLimit
+- `src/shared/retry-logic.ts` — RetryConfig, isRetriable, backoffMs, shouldRetry
+- `src/shared/cascading-timeout.ts` — TimeoutConfig, resolveTimeout, depth schedule
+- `src/shared/trace-propagation.ts` — TraceEnv, manifest writing, PID files
+- `src/shared/allowed-agents-guard.ts` — checkAllowedAgent, parent enforcement
+- `src/shared/subagent-events.ts` — Event types, payloads, turn cost rollup
+
+### New Tests (72 passing)
+
+- `test/unit/cost-guard.test.ts` — 15 tests
+- `test/unit/retry-logic.test.ts` — 22 tests
+- `test/unit/cascading-timeout.test.ts` — 12 tests
+- `test/unit/trace-propagation.test.ts` — 7 tests
+- `test/unit/allowed-agents-guard.test.ts` — 7 tests
+- `test/unit/subagent-events.test.ts` — 6 tests
+
+### Added — Domain & Tool Restrictions (ported from pi_launchpad)
+
+- **Domain enforcement** (`config.domain`, `config.expertise`): per-agent file path restrictions with per-operation permissions (read/upsert/delete). Injected via `AGENT_DOMAIN_RULES` env var. Includes bash heuristic analysis for write/delete pattern detection.
+- **Tool allowlist** (`config.allowedTools`): permissive tool restriction — all tools allowed by default. Read-only tools (read, grep, find, ls, glob) and `subagent` are always allowed and cannot be blocked.
+- **TillDone task tracking** (`src/shared/tilldone.ts`): structured task list state machine (idle→inprogress→done) for multi-step delegation
+- **Streaming callbacks** (`src/shared/stream-callbacks.ts`): typed `StreamCallbacks` interface for real-time progress from child pi processes via JSON line protocol
+- **Trace query scripts** (`scripts/trace-index.sh`): summary, failures, costly, per-agent queries against manifest data
+- **Acceptance test suite** (`scripts/acceptance/subagent-delegation.sh`): E2E verification of all new features
+
+### New Modules (Phase 2)
+
+- `src/shared/domain-enforcement.ts` — DomainRule, ExpertiseEntry, isDomainAllowed, checkExpertise, buildDomainEnv
+- `src/shared/tool-allowlist.ts` — resolveToolAllowlist, isToolAllowed, always-allowed tools
+- `src/shared/tilldone.ts` — TillDone state machine, mutations, query helpers
+- `src/shared/stream-callbacks.ts` — StreamCallbacks, createStreamProcessor, ObservedToolCall
+
+### New Tests (Phase 2 — 99 additional tests)
+
+- `test/unit/domain-enforcement.test.ts` — 27 tests
+- `test/unit/tilldone.test.ts` — 25 tests
+- `test/unit/tool-allowlist.test.ts` — 16 tests
+- `test/unit/stream-callbacks.test.ts` — 31 tests
+
+### Config Schema Additions
+
+`ExtensionConfig` now accepts:
+- `cost?: { maxPerRun?, maxSessionBudget? }`
+- `retry?: { maxRetries?, baseMs?, maxMs?, retriablePatterns? }`
+- `timeout?: { cascadeEnabled?, baseMs?, depthSchedule? }`
+- `tracePropagation?: boolean` (default: true)
+- `enforceAllowedAgents?: boolean` (default: true)
+- `emitLifecycleEvents?: boolean` (default: true)
+
+All new config fields are optional with sensible defaults. No breaking changes to existing installations.
+
 ## [0.26.0] - 2026-05-29
 
 ### Added

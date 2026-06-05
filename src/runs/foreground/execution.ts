@@ -65,6 +65,11 @@ import {
 	summarizeRecentMutatingFailures,
 } from "../shared/long-running-guard.ts";
 import { acceptanceFailureMessage, evaluateAcceptance, formatAcceptancePrompt, resolveEffectiveAcceptance, stripAcceptanceReport } from "../shared/acceptance.ts";
+import { checkRunCostLimit, formatCost } from "../../shared/cost-guard.ts";
+import { resolveTimeout, formatTimeout } from "../../shared/cascading-timeout.ts";
+import { shouldRetry, sleep } from "../../shared/retry-logic.ts";
+import { resolveTraceRunId, buildTraceEnv, writePidFile, removePidFile, resolveSpawnDepth } from "../../shared/trace-propagation.ts";
+import { buildDomainEnv } from "../../shared/domain-enforcement.ts";
 
 const artifactOutputByResult = new WeakMap<SingleResult, string>();
 const acceptanceOutputByResult = new WeakMap<SingleResult, string>();
@@ -226,7 +231,15 @@ async function runSingleAttempt(
 		lastActivityAt: startTime,
 	};
 	result.progress = progress;
-	const spawnEnv = { ...process.env, ...sharedEnv, ...getSubagentDepthEnv(options.maxSubagentDepth) };
+	const traceRunId = options.traceRunId ?? resolveTraceRunId();
+	const traceEnv = buildTraceEnv(traceRunId, agent.name, options.spawnDepth ?? resolveSpawnDepth());
+
+	// Domain enforcement env vars
+	const domainEnv = (options.domain && options.domain.length > 0)
+		? buildDomainEnv(options.domain, options.expertise ?? [], options.allowedTools ?? [], options.cwd ?? process.cwd())
+		: {};
+
+	const spawnEnv = { ...process.env, ...sharedEnv, ...getSubagentDepthEnv(options.maxSubagentDepth), ...traceEnv, ...domainEnv };
 	let observedMutationAttempt = false;
 
 	const exitCode = await new Promise<number>((resolve) => {
@@ -315,6 +328,10 @@ async function runSingleAttempt(
 			settled = true;
 			clearFinalDrainTimers();
 			clearStdioGuard();
+			if (cascadeTimer) {
+				clearTimeout(cascadeTimer);
+				cascadeTimer = undefined;
+			}
 			if (activityTimer) {
 				clearInterval(activityTimer);
 				activityTimer = undefined;
@@ -324,6 +341,19 @@ async function runSingleAttempt(
 			removeInterruptListener?.();
 			resolve(code);
 		};
+
+		// Cascading timeout: kill process if it exceeds the depth-aware limit
+		const cascadeTimeoutMs = options.timeoutConfig ? resolveTimeout(options.spawnDepth ?? 0, options.timeoutConfig) : undefined;
+		let cascadeTimer: NodeJS.Timeout | undefined;
+		if (cascadeTimeoutMs && Number.isFinite(cascadeTimeoutMs)) {
+			cascadeTimer = setTimeout(() => {
+				if (settled || processClosed || detached) return;
+				result.error = result.error ?? `Subagent timed out after ${formatTimeout(cascadeTimeoutMs)} (depth ${options.spawnDepth ?? 0})`;
+				trySignalChild(proc, "SIGTERM");
+				setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 5000);
+			}, cascadeTimeoutMs);
+			cascadeTimer.unref?.();
+		}
 
 		const drainPendingControlEvents = (): ControlEvent[] | undefined => {
 			if (pendingControlEvents.length === 0) return undefined;
@@ -493,6 +523,17 @@ async function runSingleAttempt(
 						result.usage.cacheWrite += u.cacheWrite || 0;
 						result.usage.cost += u.cost?.total || 0;
 						progress.tokens = result.usage.input + result.usage.output;
+
+						// Cost guard: kill process if per-run cost exceeded
+						if (options.costGuard) {
+							const costCheck = checkRunCostLimit(result.usage.cost, options.costGuard.maxPerRun);
+							if (costCheck.exceeded) {
+								result.stopReason = "cost_limit" as string;
+								result.error = `Cost limit (${formatCost(options.costGuard.maxPerRun)}) reached: ${formatCost(result.usage.cost)}`;
+								trySignalChild(proc, "SIGTERM");
+								setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 3000);
+							}
+						}
 					}
 					if (!result.model && evt.message.model) result.model = evt.message.model;
 					if (evt.message.errorMessage) assistantError = evt.message.errorMessage;
@@ -556,6 +597,11 @@ async function runSingleAttempt(
 
 		let stderrBuf = "";
 
+		// PID tracking for liveness checking
+		if (options.traceRunId || traceRunId) {
+			writePidFile(options.traceRunId ?? traceRunId, agent.name, proc.pid!);
+		}
+
 		const clearStdioGuard = attachPostExitStdioGuard(proc, { idleMs: 2000, hardMs: 8000 });
 		proc.stdout.on("data", (d) => {
 			buf += d.toString();
@@ -571,6 +617,10 @@ async function runSingleAttempt(
 			clearFinalDrainTimers();
 		});
 		proc.on("close", (code, signal) => {
+			// PID tracking cleanup
+			if (options.traceRunId || traceRunId) {
+				removePidFile(options.traceRunId ?? traceRunId, agent.name);
+			}
 			clearFinalDrainTimers();
 			clearStdioGuard();
 			void jsonlWriter.close().catch(() => {
@@ -982,5 +1032,77 @@ export async function runSync(
 		}
 	}
 
+	// Manifest writing (trace propagation)
+	if (options.traceRunId || options.sessionCostTracker) {
+		try {
+			const { writeRunManifest } = await import("../../shared/trace-propagation.ts");
+			const traceId = options.traceRunId ?? resolveTraceRunId();
+			writeRunManifest(runtimeCwd, {
+				runId: options.runId,
+				timestamp: new Date().toISOString(),
+				mode: "single",
+				agent: agentName,
+				taskCount: 1,
+				successCount: result.exitCode === 0 ? 1 : 0,
+				failCount: result.exitCode !== 0 ? 1 : 0,
+				totalCost: Math.round(result.usage.cost * 10000) / 10000,
+				totalTokens: { input: result.usage.input, output: result.usage.output },
+				tasks: [{
+					agent: agentName,
+					exitCode: result.exitCode,
+					cost: Math.round(result.usage.cost * 10000) / 10000,
+					durationMs: result.progressSummary?.durationMs,
+				}],
+			});
+		} catch {
+			// Manifest writing is best effort
+		}
+	}
+
+	// Session cost accumulation
+	if (options.sessionCostTracker && result.usage.cost > 0) {
+		options.sessionCostTracker.add(result.usage.cost);
+	}
+
 	return result;
+}
+
+/**
+ * Retry wrapper around runSync.
+ * Retries the entire run on retriable errors (429, 503, ETIMEDOUT, etc.)
+ * with exponential backoff. Does NOT retry on code errors or non-retriable exits.
+ */
+export async function runSyncWithRetry(
+	runtimeCwd: string,
+	agents: AgentConfig[],
+	agentName: string,
+	task: string,
+	options: RunSyncOptions,
+	retryConfig?: import("../../shared/retry-logic.ts").ResolvedRetryConfig,
+): Promise<SingleResult> {
+	const resolved = retryConfig ?? (await import("../../shared/retry-logic.ts")).DEFAULT_RETRY_CONFIG;
+
+	let attempt = 0;
+	while (true) {
+		const result = await runSync(runtimeCwd, agents, agentName, task, options);
+
+		// Success or non-retriable → return immediately
+		if (result.exitCode === 0 && !result.error) return result;
+
+		// Check if retry is warranted
+		const stderr = result.error ?? "";
+		const retryDecision = shouldRetry(stderr, result.exitCode, attempt, resolved);
+		if (!retryDecision) return result;
+
+		// Wait with backoff before retrying
+		attempt++;
+		await sleep(retryDecision.delayMs);
+
+		// Add retry note to progress
+		if (result.progress) {
+			result.progress.recentOutput.push(
+				`Retriable error (attempt ${attempt}/${resolved.maxRetries}), retrying in ${retryDecision.delayMs}ms...`,
+			);
+		}
+	}
 }

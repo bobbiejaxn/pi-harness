@@ -1089,6 +1089,103 @@ Then `/take-screenshot https://example.com` switches to Sonnet, delegates to `br
 
 For more reusable workflows on top of subagents, including `/chain-prompts` and compare-style prompts such as `/best-of-n`, install `pi-prompt-template-model` separately and copy the examples you want into `~/.pi/agent/prompts/`.
 
+## Cost & Reliability Guards
+
+Production-hardened controls ported from real-world deployments. All are opt-in via config or environment variables.
+
+### Per-run cost guard
+
+Kill a subagent process if its cumulative spend exceeds a threshold.
+
+```json
+{ "cost": { "maxPerRun": 0.50 } }
+```
+
+Env override: `PI_SUBAGENT_MAX_COST=0.50`
+
+When exceeded, the process receives SIGTERM and the run is marked as `cost_limit`.
+
+### Session budget
+
+Cumulative spend cap across **all** subagent calls in one session. Prevents parallel swarms from burning unbounded budget.
+
+```json
+{ "cost": { "maxSessionBudget": 3.00 } }
+```
+
+Env override: `PI_SESSION_MAX_COST=3.00`
+
+When exhausted, new subagent calls are skipped with a clear error message.
+
+### Cascading timeouts
+
+Deeper agents get less time. Default schedule: depth 0 = 15min, 1 = 10min, 2 = 5min, 3+ = 3min.
+
+```json
+{ "timeout": { "cascadeEnabled": true, "depthSchedule": [900000, 600000, 300000, 180000] } }
+```
+
+Env override: `PI_SUBAGENT_TIMEOUT_MS=120000` (disables cascade, uses fixed timeout)
+
+### Retry with exponential backoff
+
+Retries on transient errors (429, 503, ETIMEDOUT, ECONNRESET, rate_limit, overloaded) with exponential backoff + jitter.
+
+```json
+{ "retry": { "maxRetries": 2, "baseMs": 1000, "maxMs": 16000 } }
+```
+
+Env override: `PI_SUBAGENT_MAX_RETRIES=3`
+
+Does NOT retry on code errors, lint failures, or non-retriable exits.
+
+### Allowed-agents guard
+
+Parent agents can restrict which children they spawn via the `agents` frontmatter field:
+
+```yaml
+---
+name: orchestrator
+agents: [worker, scout, researcher]
+---
+```
+
+When present, only listed agents can be spawned. When absent, all discovered agents are allowed.
+
+```json
+{ "enforceAllowedAgents": true }
+```
+
+### Trace propagation
+
+Propagates a trace run ID through all nested children via `PI_TRACE_RUN_ID`, `PI_TRACE_AGENT_NAME`, `PI_TRACE_SPAWN_DEPTH` env vars. Writes per-run manifests to `.pi/traces/runs/` and subagent logs to `.pi/traces/subagents/`.
+
+```json
+{ "tracePropagation": true }
+```
+
+PID files are written to `~/.pi/agents-live/<runId>/` for liveness checking.
+
+### Lifecycle events
+
+Structured events emitted via `pi.events` for external observability integration:
+
+| Event | When |
+|-------|------|
+| `subagent.run_start` | Run begins |
+| `subagent.run_end` | Run completes (success or failure) |
+| `subagent.run_retry` | Retriable error triggered a retry |
+| `subagent.cost_checkpoint` | Cost threshold crossed |
+| `subagent.budget_exhausted` | Session budget exceeded |
+| `subagent.timeout` | Run killed by cascading timeout |
+| `subagent.manifest_written` | Per-run manifest persisted |
+
+These events are compatible with [pi-agent-observability](https://github.com/disler/pi-agent-observability) for live dashboard integration.
+
+```json
+{ "emitLifecycleEvents": true }
+```
+
 ## Runtime files
 
 The main runtime files are:
@@ -1107,4 +1204,79 @@ The main runtime files are:
 | `src/runs/shared/worktree.ts` | Git worktree isolation. |
 | `src/intercom/intercom-bridge.ts` | Runtime intercom bridge instructions and diagnostics. |
 | `src/extension/schemas.ts` / `src/shared/types.ts` | Tool schemas, shared types, and event constants. |
+| `src/shared/cost-guard.ts` | Per-run cost guard and session budget tracker. |
+| `src/shared/retry-logic.ts` | Exponential backoff retry for transient errors. |
+| `src/shared/cascading-timeout.ts` | Depth-aware cascading timeouts. |
+| `src/shared/trace-propagation.ts` | Trace run ID, PID files, manifests. |
+| `src/shared/allowed-agents-guard.ts` | Parent agent spawn restrictions. |
+| `src/shared/subagent-events.ts` | Structured lifecycle event emission. |
+| `src/shared/domain-enforcement.ts` | Per-agent file path restrictions and bash heuristic patterns. |
+| `src/shared/tool-allowlist.ts` | Permissive tool allowlist (allow all by default). |
+| `src/shared/tilldone.ts` | Structured task list state machine for multi-task delegation. |
+| `src/shared/stream-callbacks.ts` | Real-time streaming event processor for child processes. |
+
+## Domain & Tool Restrictions
+
+Production-hardened access control ported from pi_launchpad's domain-enforcer.
+
+### Domain enforcement
+
+Restrict subagents to specific directories with per-operation permissions.
+
+```json
+{
+  "domain": [
+    { "path": "src", "read": true, "upsert": true, "delete": false },
+    { "path": "docs", "read": true, "upsert": false, "delete": false }
+  ]
+}
+```
+
+Injected into child env as `AGENT_DOMAIN_RULES`. Includes bash heuristic analysis to detect write/delete operations via command patterns.
+
+### Expertise overrides
+
+Grant specific agents access to files outside their domain:
+
+```json
+{
+  "expertise": [
+    { "absPath": "/project/config.ts", "updatable": true, "maxLines": 100 }
+  ]
+}
+```
+
+### Tool allowlist (permissive)
+
+Restrict which tools a subagent can use. **Permissive by default** — all tools are allowed unless explicitly configured.
+
+Read-only tools (`read`, `grep`, `find`, `ls`, `glob`) and `subagent` are **always allowed** and cannot be blocked.
+
+```json
+{ "allowedTools": ["read", "write", "bash"] }
+```
+
+### TillDone task tracking
+
+Structured task list state machine for multi-step delegation. Create a list, add tasks, track progress (idle → inprogress → done). Pure state — no I/O side effects.
+
+### Streaming callbacks
+
+Typed `StreamCallbacks` interface for real-time progress from child pi processes. Handles the JSON line protocol (`--mode json`) and dispatches to `onText`, `onToolCallStart`, `onToolEnd`, `onUsage` callbacks.
+
+### Trace query scripts
+
+```bash
+# Summary of all runs
+./scripts/trace-index.sh summary
+
+# Show failed runs
+./scripts/trace-index.sh failures
+
+# Most expensive runs
+./scripts/trace-index.sh costly
+
+# Runs for a specific agent
+./scripts/trace-index.sh agent scout
+```
 | `test/unit/` / `test/integration/` | Unit and loader-based integration tests. |

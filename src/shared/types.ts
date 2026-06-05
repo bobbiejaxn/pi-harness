@@ -795,6 +795,37 @@ export interface RunSyncOptions {
 		dynamic?: boolean;
 		dynamicGroup?: boolean;
 	};
+
+	// ── Cost & Reliability (ported from ivi) ──────────────────
+
+	/** Resolved cost guard config for this run. */
+	costGuard?: import("./cost-guard.ts").ResolvedCostGuardConfig;
+
+	/** Session cost tracker for cumulative budget enforcement. */
+	sessionCostTracker?: import("./cost-guard.ts").SessionCostTracker;
+
+	/** Resolved timeout config for this run. */
+	timeoutConfig?: import("./cascading-timeout.ts").ResolvedTimeoutConfig;
+
+	/** Current spawn depth (0 = top-level). */
+	spawnDepth?: number;
+
+	/** Resolved retry config for this run. */
+	retryConfig?: import("./retry-logic.ts").ResolvedRetryConfig;
+
+	/** Trace run ID for propagation. */
+	traceRunId?: string;
+
+	// ── Domain & Tool Restrictions (ported from pi_launchpad) ─────
+
+	/** Domain rules injected into child env. */
+	domain?: import("./domain-enforcement.ts").DomainRule[];
+
+	/** Expertise entries injected into child env. */
+	expertise?: import("./domain-enforcement.ts").ExpertiseEntry[];
+
+	/** Tool allowlist for child agent. Empty = all tools. */
+	allowedTools?: string[];
 }
 
 export type IntercomBridgeMode = "off" | "fork-only" | "always";
@@ -826,6 +857,37 @@ export interface ExtensionConfig {
 	worktreeSetupHook?: string;
 	worktreeSetupHookTimeoutMs?: number;
 	intercomBridge?: IntercomBridgeConfig;
+
+	// ── Cost & Reliability (ported from ivi) ──────────────────────
+
+	/** Per-run and session cost limits. */
+	cost?: import("./cost-guard.ts").CostGuardConfig;
+
+	/** Retry configuration for transient errors. */
+	retry?: import("./retry-logic.ts").RetryConfig;
+
+	/** Cascading timeout configuration. */
+	timeout?: import("./cascading-timeout.ts").TimeoutConfig;
+
+	/** Enable trace propagation (run ID, PID files, manifests). Default: true. */
+	tracePropagation?: boolean;
+
+	/** Enable allowed-agents guard (restrict which agents can be spawned). Default: true. */
+	enforceAllowedAgents?: boolean;
+
+	/** Enable subagent lifecycle event emission. Default: true. */
+	emitLifecycleEvents?: boolean;
+
+	// ── Domain & Tool Restrictions (ported from pi_launchpad) ─────
+
+	/** Per-agent domain rules (file path restrictions). Default: no restrictions. */
+	domain?: import("./domain-enforcement.ts").DomainRule[];
+
+	/** Per-agent expertise entries (exact file overrides). Default: none. */
+	expertise?: import("./domain-enforcement.ts").ExpertiseEntry[];
+
+	/** Tool allowlist for spawned agents. Empty = all tools (permissive). */
+	allowedTools?: string[];
 }
 
 // ============================================================================
