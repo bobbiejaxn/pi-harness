@@ -4,24 +4,14 @@
  * pi-harness installer — project-level only.
  *
  * Installs the pi-harness subagent extension to the current project's
- * `.pi/extensions/subagent/` directory. Never installs to user-level
- * (`~/.pi/agent/extensions/`) to avoid conflicts with upstream pi-subagents.
+ * `.pi/extensions/subagent/` directory. Never installs to user-level.
  *
- * ## Why project-level only
- *
- * pi-harness is a heavily customized fork (circuit breaker, session learner,
- * execution guard, domain enforcement). Loading it at user-level would:
- *   1. Conflict with upstream pi-subagents (both register the `subagent` tool)
- *   2. Break projects that depend on the vanilla extension
- *   3. Create implicit, version-uncontrolled dependencies
- *
- * ## Usage
- *
+ * Usage:
  *   cd /path/to/your/project
- *   npx pi-harness              # Install to .pi/extensions/subagent/
- *   npx pi-harness --remove     # Remove the extension
- *   npx pi-harness --check      # Check if installed and report version
- *   npx pi-harness --update     # Pull latest from GitHub and reinstall
+ *   node install.mjs              # Install to .pi/extensions/subagent/
+ *   node install.mjs --remove     # Remove the extension
+ *   node install.mjs --check      # Check if installed and report version
+ *   node install.mjs --update     # Pull latest from GitHub and reinstall
  */
 
 import { execSync } from "node:child_process";
@@ -31,8 +21,7 @@ import * as path from "node:path";
 const GITHUB_REPO = "bobbiejaxn/pi-harness";
 const EXTENSION_DIR_NAME = "subagent";
 
-function getProjectRoot(): string {
-	// Walk up from cwd to find a package.json, .git, or .pi directory
+function getProjectRoot() {
 	let dir = process.cwd();
 	for (let i = 0; i < 20; i++) {
 		if (
@@ -49,11 +38,11 @@ function getProjectRoot(): string {
 	return process.cwd();
 }
 
-function getExtensionDir(projectRoot: string): string {
+function getExtensionDir(projectRoot) {
 	return path.join(projectRoot, ".pi", "extensions", EXTENSION_DIR_NAME);
 }
 
-function install(projectRoot: string): void {
+function install(projectRoot) {
 	const extDir = getExtensionDir(projectRoot);
 
 	console.log(`pi-harness: Installing to ${extDir}\n`);
@@ -69,31 +58,24 @@ function install(projectRoot: string): void {
 	if (fs.existsSync(userLevel)) {
 		console.warn(`⚠️  WARNING: User-level subagent found at ${userLevel}`);
 		console.warn("   This WILL conflict with the project-level extension.");
-		console.warn("   Remove it with: mv ~/.pi/agent/extensions/subagent ~/.pi/agent/extensions/.subagent");
+		console.warn("   Remove it: rm -rf ~/.pi/agent/extensions/subagent");
 		console.warn("");
 	}
 
+	// If existing install, remove old files first (clean install)
 	if (fs.existsSync(extDir)) {
-		console.log("Updating existing project-level installation...");
-		try {
-			execSync(`git -C "${extDir}" pull`, { stdio: "inherit" });
-		} catch {
-			// Not a git repo or pull failed — overwrite
-			console.log("Pull failed. Replacing with fresh clone...");
-			fs.rmSync(extDir, { recursive: true });
-		}
+		console.log("Removing previous installation...");
+		fs.rmSync(extDir, { recursive: true });
 	}
 
-	if (!fs.existsSync(extDir)) {
-		console.log(`Cloning from github.com/${GITHUB_REPO}...`);
-		try {
-			execSync(`git clone https://github.com/${GITHUB_REPO}.git "${extDir}"`, {
-				stdio: "inherit",
-			});
-		} catch {
-			console.error("Failed to clone. Check your network and GitHub access.");
-			process.exit(1);
-		}
+	console.log(`Cloning from github.com/${GITHUB_REPO}...`);
+	try {
+		execSync(`git clone https://github.com/${GITHUB_REPO}.git "${extDir}"`, {
+			stdio: "inherit",
+		});
+	} catch {
+		console.error("Failed to clone. Check your network and GitHub access.");
+		process.exit(1);
 	}
 
 	// Verify installation
@@ -115,7 +97,7 @@ Tools added:
 `);
 }
 
-function remove(projectRoot: string): void {
+function remove(projectRoot) {
 	const extDir = getExtensionDir(projectRoot);
 	if (fs.existsSync(extDir)) {
 		fs.rmSync(extDir, { recursive: true });
@@ -125,14 +107,13 @@ function remove(projectRoot: string): void {
 	}
 }
 
-function check(projectRoot: string): void {
+function check(projectRoot) {
 	const extDir = getExtensionDir(projectRoot);
 	if (!fs.existsSync(extDir)) {
 		console.log("pi-harness: not installed in this project");
 		return;
 	}
 
-	// Read version from package.json
 	try {
 		const pkg = JSON.parse(fs.readFileSync(path.join(extDir, "package.json"), "utf-8"));
 		console.log(`pi-harness v${pkg.version} installed at ${extDir}`);
@@ -150,10 +131,10 @@ function check(projectRoot: string): void {
 	}
 }
 
-function update(projectRoot: string): void {
+function update(projectRoot) {
 	const extDir = getExtensionDir(projectRoot);
 	if (!fs.existsSync(extDir)) {
-		console.log("pi-harness is not installed. Run `npx pi-harness` first.");
+		console.log("pi-harness is not installed. Run install first.");
 		process.exit(1);
 	}
 	console.log("Pulling latest...");
@@ -162,12 +143,12 @@ function update(projectRoot: string): void {
 		console.log("✅ pi-harness updated");
 	} catch {
 		console.error("Update failed. Try removing and reinstalling:");
-		console.error("  npx pi-harness --remove && npx pi-harness");
+		console.error("  node install.mjs --remove && node install.mjs");
 		process.exit(1);
 	}
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
 const projectRoot = getProjectRoot();
@@ -177,10 +158,10 @@ if (args.includes("--help") || args.includes("-h")) {
 pi-harness - Project-level subagent execution engine for pi
 
 Usage:
-  npx pi-harness              Install to .pi/extensions/subagent/
-  npx pi-harness --remove     Remove from this project
-  npx pi-harness --check      Check installation status
-  npx pi-harness --update     Pull latest from GitHub
+  node install.mjs              Install to .pi/extensions/subagent/
+  node install.mjs --remove     Remove from this project
+  node install.mjs --check      Check installation status
+  node install.mjs --update     Pull latest from GitHub
 
 Project root detected: ${projectRoot}
 
