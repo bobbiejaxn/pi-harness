@@ -25,6 +25,77 @@ npx pi-harness
 
 This clones the extension to `.pi/extensions/subagent/` in your project. Pi auto-discovers it when you run `pi` in that directory.
 
+## Configuration
+
+All config is optional. Create `.pi/extensions/subagent/config.json` in your project:
+
+```json
+{
+  "cost": {
+    "maxPerRun": 0.50,
+    "maxSessionBudget": 5.00
+  },
+  "retry": {
+    "maxRetries": 2,
+    "baseMs": 1000,
+    "maxMs": 30000
+  },
+  "timeout": {
+    "cascadeEnabled": true,
+    "baseMs": 900000
+  },
+  "executionGuard": {
+    "maxTurns": 50,
+    "maxRepetitions": 3,
+    "stallTimeoutMs": 120000
+  },
+  "circuitBreaker": {
+    "failureThreshold": 3,
+    "cooldownMs": 30000,
+    "maxCooldownMs": 300000
+  },
+  "mergeResolver": {
+    "aiResolveEnabled": false,
+    "reimagineEnabled": false,
+    "aiModel": "zai/glm-5"
+  },
+  "domain": [
+    { "path": "src", "read": true, "upsert": true, "delete": false },
+    { "path": "docs", "read": true, "upsert": false, "delete": false }
+  ],
+  "allowedTools": ["read", "write", "bash", "grep"]
+}
+```
+
+### What each option does
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `cost.maxPerRun` | No limit | Kill child when single run exceeds this cost |
+| `cost.maxSessionBudget` | No limit | Cumulative spend cap across all runs in a session |
+| `retry.maxRetries` | 2 | Retries on transient errors (429, 503, timeouts) |
+| `timeout.cascadeEnabled` | true | Depth-aware timeouts (15m→10m→5m→3m) |
+| `executionGuard.maxTurns` | 50 | Kill after N+1 turns without finishing |
+| `executionGuard.maxRepetitions` | 3 | Kill after N identical tool calls (stuck loop) |
+| `executionGuard.stallTimeoutMs` | 120000 | Kill when no event for 2 minutes |
+| `circuitBreaker.failureThreshold` | 3 | Block agent after N consecutive failures |
+| `circuitBreaker.cooldownMs` | 30000 | Wait before allowing one probe attempt |
+| `mergeResolver.aiResolveEnabled` | false | Use LLM to resolve merge conflicts |
+| `mergeResolver.reimagineEnabled` | false | Reimplement from scratch via LLM |
+| `domain` | No restrictions | File path access rules per directory |
+| `allowedTools` | All tools | Restrict which tools child agents can use |
+
+### Environment variable overrides
+
+Set these instead of or in addition to config.json:
+
+| Variable | Overrides |
+|----------|-----------|
+| `PI_SUBAGENT_MAX_COST` | `cost.maxPerRun` |
+| `PI_SESSION_MAX_COST` | `cost.maxSessionBudget` |
+| `PI_SUBAGENT_TIMEOUT_MS` | `timeout.baseMs` |
+| `PI_SUBAGENT_MAX_RETRIES` | `retry.maxRetries` |
+
 ## Try this first
 
 You do not need to create agents, write config, or learn slash commands. After installing, ask Pi for delegation in plain language:

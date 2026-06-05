@@ -1,6 +1,103 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0] - 2026-06-05 — pi-harness
+
+Forked from [pi-subagents](https://github.com/nicobailon/pi-subagents) v0.26.0. Renamed to **pi-harness**.
+
+### ⚠️ Breaking: Project-Level Only
+
+Installs to `.pi/extensions/subagent/` (project-level), never `~/.pi/agent/extensions/` (user-level). Both register a `subagent` tool — pi refuses to load both simultaneously. See README for details.
+
+### Added — Self-Learning & Safety
+
+- **Circuit breaker** (`config.circuitBreaker`): per-agent failure tracking with exponential backoff. Trips after N consecutive failures (default 3), blocks dispatch for cooldown (default 30s), allows one probe attempt (half-open state), doubles cooldown on probe failure. Caps at maxCooldownMs (default 5min). Wired before every `runSync` call.
+- **Execution guard** (`config.executionGuard`): real-time stuck-agent detection during child process runs. Three detection modes:
+  - **Turn limit** (default 50): kills after N+1 assistant turns without finishing
+  - **Repetition detection** (default 3): kills after N identical tool calls (same name + args)
+  - **Stall detection** (default 120s): kills when no event received within timeout window
+  - Events reset the stall timer — only truly stuck agents are killed
+- **Session learner** (`SessionLearner`): mid-session self-learning from completed subagent runs. Observes cost, duration, model, and success rate per agent. Produces `RunHint` for upcoming runs:
+  - `estimatedCost` — predicted cost based on historical average
+  - `suggestedTimeoutMs` — p95 duration + 50% buffer
+  - `preferredModel` — model with highest success rate
+  - `avoidModels` — models with 0% success and ≥2 attempts
+  - `skipRetry` — flag when 3+ consecutive failures
+  - `shouldEscalate` — flag when >50% failure rate with ≥3 runs
+  - Hints consumed: timeout feeds into execution guard, escalation surfaced in tool results
+- **Merge resolver** (`config.mergeResolver`): 4-tier conflict resolution for worktree merges:
+  - Tier 1: Clean merge (`git merge --no-edit`) — always enabled
+  - Tier 2: Auto-resolve (parse conflict markers, keep incoming for empty canonical) — always enabled
+  - Tier 3: AI-resolve (spawn pi subprocess) — opt-in via `aiResolveEnabled`
+  - Tier 4: Re-imagine (abort, reimplement via LLM) — opt-in via `reimagineEnabled`
+  - Wired into parallel worktree flow — merges successful branches before cleanup
+
+### Added — Structural Domain Enforcement
+
+- **Child domain guard** (`src/runs/foreground/child-domain-guard.ts`): structural enforcement of domain restrictions inside child processes. Loaded via `-e` flag only when domain rules are configured. Hooks `pi.on("tool_call")` to block violations in real-time. Self-exits when no `AGENT_DOMAIN_RULES` set (zero overhead).
+
+### Added — Namespace Compatibility
+
+- `package.json` declares peerDependencies for both `@earendil-works/pi-*` (v0.78+) and `@mariozechner/pi-*` (v0.73+). Extension loads in any pi installation.
+- `agents.ts` re-export shim at extension root for backward compat with external extensions importing `../subagent/agents.js`.
+
+### Added — Backward Compat Shim
+
+- `agents.ts` at extension root re-exports from `src/agents/agents.ts`. External extensions that import `../subagent/agents.js` continue to work.
+
+### Config Schema Additions
+
+`ExtensionConfig` now accepts all previous fields plus:
+```json
+{
+  "executionGuard": { "maxTurns": 50, "maxRepetitions": 3, "stallTimeoutMs": 120000 },
+  "circuitBreaker": { "failureThreshold": 3, "cooldownMs": 30000, "maxCooldownMs": 300000 },
+  "mergeResolver": { "aiResolveEnabled": false, "reimagineEnabled": false, "aiModel": "zai/glm-5" }
+}
+```
+
+All new config fields are optional with sensible defaults. No breaking changes.
+
+### New Modules
+
+| Module | Purpose |
+|--------|---------|
+| `src/shared/circuit-breaker.ts` | CircuitBreaker class with closed/open/half-open states |
+| `src/shared/execution-guard.ts` | ExecutionGuard class with turn/repetition/stall detection |
+| `src/shared/session-learner.ts` | SessionLearner class with observe/suggest/summary |
+| `src/shared/merge-resolver.ts` | resolveMerge + conflict parsing helpers |
+| `src/shared/child-domain-guard.ts` | Extension loaded into child processes for domain enforcement |
+| `src/shared/cost-guard.ts` | CostGuardConfig, SessionCostTracker |
+| `src/shared/retry-logic.ts` | RetryConfig, isRetriable, backoffMs |
+| `src/shared/cascading-timeout.ts` | TimeoutConfig, depth-aware schedules |
+| `src/shared/trace-propagation.ts` | Trace env, manifests, PID files |
+| `src/shared/allowed-agents-guard.ts` | Parent-enforced agent restrictions |
+| `src/shared/subagent-events.ts` | Structured lifecycle events |
+| `src/shared/domain-enforcement.ts` | DomainRule, ExpertiseEntry, buildDomainEnv |
+| `src/shared/tool-allowlist.ts` | resolveToolAllowlist, isToolAllowed |
+| `src/shared/tilldone.ts` | TillDone state machine |
+| `src/shared/stream-callbacks.ts` | StreamCallbacks, createStreamProcessor |
+
+### Tests
+
+- **255 unit tests** across 16 test files, 0 failures
+- **65 structural checks** verifying all modules wired correctly
+- **11 live E2E checks** across circuit breaker and execution guard
+- Drop-in verified on ivi project (56 agents, 22 extensions)
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `PI_SUBAGENT_MAX_COST` | Per-run cost limit | No limit |
+| `PI_SESSION_MAX_COST` | Session budget limit | No limit |
+| `PI_SUBAGENT_TIMEOUT_MS` | Override cascading timeout | Depth schedule |
+| `PI_SUBAGENT_MAX_RETRIES` | Max retry attempts | 2 |
+| `PI_TRACE_RUN_ID` | Trace run ID (propagated) | Auto-generated |
+| `AGENT_DOMAIN_RULES` | JSON domain rules for child | None |
+| `AGENT_EXPERTISE` | JSON expertise entries for child | None |
+| `AGENT_ALLOWED_TOOLS` | JSON tool allowlist for child | None |
+
+## [Unreleased — upstream pi-subagents]
 
 ### Added — Cost & Reliability Guards
 
