@@ -320,6 +320,11 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		circuitBreaker: new CircuitBreaker(config.circuitBreaker),
 		sessionLearner: new SessionLearner(),
 		mergeResolverOptions: config.mergeResolver,
+		get parentModel() {
+			const m = pi.model as { id?: string; provider?: string } | undefined;
+			if (!m) return undefined;
+			return m.provider && m.id ? `${m.provider}/${m.id}` : m.id;
+		},
 	});
 
 	pi.registerMessageRenderer<SlashMessageDetails>(SLASH_RESULT_TYPE, (message, options, theme) => {

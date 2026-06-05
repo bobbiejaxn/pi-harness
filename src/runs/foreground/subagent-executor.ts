@@ -167,6 +167,8 @@ interface ExecutorDeps {
 	circuitBreaker?: import("../../shared/circuit-breaker.ts").CircuitBreaker;
 	sessionLearner?: import("../../shared/session-learner.ts").SessionLearner;
 	mergeResolverOptions?: import("../../shared/merge-resolver.ts").MergeResolverOptions;
+	/** Parent session model ID (e.g. 'zai/glm-5.1'). Passed to merge resolver. */
+	parentModel?: string;
 }
 
 interface ExecutionContextData {
@@ -1440,6 +1442,7 @@ async function mergeWorktreeResults(
 	worktreeSetup: WorktreeSetup,
 	results: SingleResult[],
 	options?: MergeResolverOptions,
+	parentModel?: string,
 ): Promise<Array<{ index: number; result: MergeResolutionResult | null }>> {
 	const mergeResults: Array<{ index: number; result: MergeResolutionResult | null }> = [];
 	const sourceBranch = WorktreeManager_getCurrentBranch(repoRoot);
@@ -1477,7 +1480,7 @@ async function mergeWorktreeResults(
 				wt.branch,
 				sourceBranch,
 				filesModified,
-				options,
+				parentModel ? { ...options, aiModel: options?.aiModel ?? parentModel } : options,
 			);
 			mergeResults.push({ index: i, result: mergeResult });
 		} catch {
@@ -1929,6 +1932,7 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 						worktreeSetup,
 						results,
 						deps.mergeResolverOptions,
+						deps.parentModel,
 					);
 					// Attach merge results to the details
 					for (const mr of mergeResults) {
