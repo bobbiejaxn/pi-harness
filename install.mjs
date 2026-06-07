@@ -85,6 +85,30 @@ function install(projectRoot) {
 		process.exit(1);
 	}
 
+	// Install runtime dependencies. The extension's package.json declares
+	// `typebox`, `jiti`, and `@earendil-works/pi-tui` as dependencies, but
+	// a bare `git clone` doesn't materialize `node_modules/`. Without this
+	// step, every `typebox`/`typebox/compile` import in the extension throws
+	// `Cannot find package 'typebox'` at load time and the extension fails to
+	// register its tools. See: https://github.com/bobbiejaxn/pi-harness/issues
+	// (regression: #1208 era — the original installer shipped before
+	// `typebox` was added to the dep list).
+	//
+	// We use `npm install --omit=dev` to avoid pulling test deps. The install
+	// is scoped to the extension directory; nothing leaks to user-level.
+	// If `npm` is unavailable (extremely rare), warn and continue — the
+	// user can run `npm install` in the extension dir manually.
+	console.log("Installing runtime dependencies...");
+	try {
+		execSync("npm install --omit=dev --no-audit --no-fund --loglevel=error", {
+			cwd: extDir,
+			stdio: "inherit",
+		});
+	} catch (e) {
+		console.warn("⚠️  npm install failed (extension may not load at runtime).");
+		console.warn(`   Run manually: cd "${extDir}" && npm install --omit=dev`);
+	}
+
 	console.log(`
 ✅ pi-harness installed to: ${extDir}
 
