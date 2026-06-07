@@ -1,0 +1,36 @@
+{
+  "comment": "pi-harness config for fb-baukonzept. Tuned to complement cron-auto-ship.sh timing: PI_TIMEOUT=1800s, PI_SUBAGENT_TIMEOUT_MS=600s, PI_STEP_TIMEOUT=300s. Strictest layer wins — execution guard kills stuck subagents BEFORE the 600s subagent timeout fires.",
+
+  "cost": {
+    "maxPerRun": 0.50,
+    "maxSessionBudget": 2.00
+  },
+
+  "retry": {
+    "maxRetries": 2,
+    "baseMs": 1000,
+    "maxMs": 30000
+  },
+
+  "timeout": {
+    "cascadeEnabled": true,
+    "baseMs": 540000
+  },
+
+  "executionGuard": {
+    "maxTurns": 30,
+    "maxRepetitions": 3,
+    "stallTimeoutMs": 180000
+  },
+
+  "circuitBreaker": {
+    "failureThreshold": 3,
+    "cooldownMs": 30000,
+    "maxCooldownMs": 300000
+  },
+
+  "mergeResolver": {
+    "aiResolveEnabled": false,
+    "reimagineEnabled": false
+  }
+}

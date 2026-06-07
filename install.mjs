@@ -164,12 +164,29 @@ function update(projectRoot) {
 	console.log("Pulling latest...");
 	try {
 		execSync(`git -C "${extDir}" pull`, { stdio: "inherit" });
-		console.log("✅ pi-harness updated");
 	} catch {
 		console.error("Update failed. Try removing and reinstalling:");
 		console.error("  node install.mjs --remove && node install.mjs");
 		process.exit(1);
 	}
+
+	// Re-materialize deps in case package.json changed in the new version.
+	// Same rationale as the post-clone install: a bare `git pull` doesn't
+	// update `node_modules/` to match a new package.json. Without this,
+	// a release that bumps `typebox` would leave users on the old version
+	// (or missing entirely if a dep was newly added).
+	console.log("Re-installing runtime dependencies...");
+	try {
+		execSync("npm install --omit=dev --no-audit --no-fund --loglevel=error", {
+			cwd: extDir,
+			stdio: "inherit",
+		});
+	} catch (e) {
+		console.warn("⚠️  npm install failed (extension may not load at runtime).");
+		console.warn(`   Run manually: cd "${extDir}" && npm install --omit=dev`);
+	}
+
+	console.log("✅ pi-harness updated");
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
