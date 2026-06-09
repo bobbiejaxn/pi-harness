@@ -275,3 +275,41 @@ export function modelThinkingBadge(theme: Theme, model?: string, thinking?: stri
 	const label = formatModelThinking(model, thinking);
 	return label ? theme.fg("dim", ` (${label})`) : "";
 }
+
+
+// ── Single compact result renderer ──────────────────────────────────────
+export function renderSingleCompact(d: Details, r: Details["results"][number], theme: Theme): Component {
+	const output = r.truncation?.text || getSingleResultOutput(r);
+	const progress = r.progress || r.progressSummary;
+	const isRunning = r.progress?.status === "running";
+	const contextBadge = d.context === "fork" ? theme.fg("warning", " [fork]") : "";
+	const stats = statJoin(theme, [
+		r.usage?.turns ? `⟳ ${r.usage.turns}` : "",
+		formatProgressStats(theme, progress),
+	]);
+	const c = new Container();
+	const width = getTermWidth() - 4;
+	const modelDisplay = modelThinkingBadge(theme, r.model);
+	c.addChild(new Text(truncLine(`${resultGlyph(r, output, theme, isRunning)} ${theme.fg("toolTitle", theme.bold(r.agent))}${modelDisplay}${contextBadge}${stats ? ` ${theme.fg("dim", "·")} ${stats}` : ""}`, width), 0, 0));
+
+	if (isRunning && r.progress) {
+		const progressSnapshotNow = snapshotNowForProgress(r.progress);
+		const activity = compactCurrentActivity(r.progress);
+		c.addChild(new Text(truncLine(theme.fg("dim", `  ⎿  ${activity}`), width), 0, 0));
+		const liveStatus = buildLiveStatusLine(r.progress, progressSnapshotNow);
+		if (liveStatus && liveStatus !== activity) c.addChild(new Text(truncLine(theme.fg("dim", `     ${liveStatus}`), width), 0, 0));
+		c.addChild(new Text(truncLine(theme.fg("accent", "  Press Ctrl+O for live detail"), width), 0, 0));
+		if (r.artifactPaths) c.addChild(new Text(truncLine(theme.fg("dim", `  output: ${shortenPath(r.artifactPaths.outputPath)}`), width), 0, 0));
+		return c;
+	}
+
+	c.addChild(new Text(truncLine(theme.fg("dim", `  ⎿  ${resultStatusLine(r, output)}`), width), 0, 0));
+	const preview = firstOutputLine(output);
+	if (preview && r.exitCode === 0 && !hasEmptyTextOutputWithoutOutputTarget(r.task, output)) {
+		c.addChild(new Text(truncLine(theme.fg("dim", `     ${preview}`), width), 0, 0));
+	}
+	if (r.sessionFile) c.addChild(new Text(truncLine(theme.fg("dim", `  session: ${shortenPath(r.sessionFile)}`), width), 0, 0));
+	if (r.artifactPaths) c.addChild(new Text(truncLine(theme.fg("dim", `  output: ${shortenPath(r.artifactPaths.outputPath)}`), width), 0, 0));
+	if (r.truncation?.artifactPath) c.addChild(new Text(truncLine(theme.fg("dim", `  full output: ${shortenPath(r.truncation.artifactPath)}`), width), 0, 0));
+	return c;
+}
