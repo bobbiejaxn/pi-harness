@@ -194,6 +194,8 @@ export class Cron {
 				this.scheduleNext(state);
 			});
 		}, state.job.intervalMs);
+		// Don't keep the process alive just for cron timers.
+		try { (state.timer as NodeJS.Timeout & { unref?: () => void }).unref?.(); } catch { /* ignore */ }
 	}
 
 	private async tick(state: JobState): Promise<void> {

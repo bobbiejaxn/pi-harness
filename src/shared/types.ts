@@ -906,6 +906,14 @@ export interface ExtensionConfig {
 
 	/** Merge resolver config: tiered conflict resolution for worktree merges. */
 	mergeResolver?: import("./merge-resolver.ts").MergeResolverOptions;
+
+	// ── Phase 4: Cron, Convex, Coms ────────────────────────────────
+
+	/** Enable cron scheduler for periodic jobs (trace summarizer etc). Default: true. Set false to disable. */
+	cron?: boolean;
+
+	/** Convex deployment URL for persistent storage. If not set, uses local JSONL. */
+	convexUrl?: string;
 }
 
 // ============================================================================

@@ -44,6 +44,8 @@ import { resolveRetryConfig } from "../shared/retry-logic.ts";
 import { resolveTimeoutConfig } from "../shared/cascading-timeout.ts";
 import { resolveTraceRunId } from "../shared/trace-propagation.ts";
 import { TraceRecorder } from "../shared/trace-recorder.ts";
+import { Cron, createTraceSummarizerJob } from "../cron/cron.ts";
+import { ConvexAdapter } from "../convex/convex-adapter.ts";
 import { checkAllowedAgent } from "../shared/allowed-agents-guard.ts";
 import {
 	SUBAGENT_RUN_START_EVENT,
@@ -250,6 +252,35 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 	// morning report, harness evolver, and pi-agent-observability).
 	const traceRecorder = new TraceRecorder(pi);
 	traceRecorder.install();
+
+	// Optional: cron scheduler for periodic jobs (e.g. trace summarizer).
+	// Enabled when config.cron is truthy or by default for the trace summarizer.
+	const cron = new Cron({
+		recorder: traceRecorder,
+		dlqDir: ".pi/traces/dlq",
+		log: (level: string, msg: string) => {
+			if (level === "error") console.error(`[cron] ${msg}`);
+			else if (level === "warn") console.warn(`[cron] ${msg}`);
+		},
+	});
+
+	// Register built-in cron jobs
+	cron.register(createTraceSummarizerJob(30 * 60 * 1000)); // 30 min
+
+	// Auto-start cron if not explicitly disabled and not in test mode
+	const isTestMode = process.env.NODE_ENV === "test" || process.argv.some((a) => a.includes("--test"));
+	if (config.cron !== false && !isTestMode) {
+		cron.start();
+	}
+
+	// Optional: Convex adapter for persistent memory and events.
+	// Enabled when config.convexUrl is set.
+	const convexAdapter = config.convexUrl
+		? new ConvexAdapter({ convexUrl: config.convexUrl })
+		: new ConvexAdapter({ storageDir: ".pi/convex-local" });
+
+	// Store adapters on state for access from slash commands and tools
+	const adapters = { cron, convexAdapter, traceRecorder } as const;
 	const costGuardConfig = resolveCostGuardConfig(config.cost);
 	const retryConfig = resolveRetryConfig(config.retry);
 	const timeoutConfig = resolveTimeoutConfig(config.timeout);
@@ -608,6 +639,10 @@ DIAGNOSTICS:
 		state.asyncJobs.clear();
 		clearSlashSnapshots();
 		slashBridge.cancelAll();
+
+		// Stop cron and close convex adapter
+		cron.stop().catch(() => {});
+		convexAdapter.close().catch(() => {});
 		slashBridge.dispose();
 		promptTemplateBridge.cancelAll();
 		promptTemplateBridge.dispose();
