@@ -16,7 +16,6 @@ import {
 	resolveStepBehavior,
 	resolveParallelBehaviors,
 	buildChainInstructions,
-	writeInitialProgressFile,
 	createParallelDirs,
 	suppressProgressForReadOnlyTask,
 	aggregateParallelOutputs,
@@ -27,7 +26,6 @@ import {
 	type ParallelStep,
 	type SequentialStep,
 	type ParallelTaskResult,
-	type ResolvedStepBehavior,
 	type ResolvedTemplates,
 } from "../../shared/settings.ts";
 import { discoverAvailableSkills, normalizeSkillInput } from "../../agents/skills.ts";
@@ -39,24 +37,14 @@ import { recordRun } from "../shared/run-history.ts";
 import {
 	cleanupWorktrees,
 	createWorktrees,
-	diffWorktrees,
 	findWorktreeTaskCwdConflict,
-	formatWorktreeDiffSummary,
 	formatWorktreeTaskCwdConflict,
 	type WorktreeSetup,
 } from "../shared/worktree.ts";
 import {
-	type ActivityState,
 	type AgentProgress,
-	type ArtifactConfig,
 	type ArtifactPaths,
-	type ControlEvent,
-	type Details,
-	type IntercomEventBus,
-	type NestedRouteInfo,
-	type ResolvedControlConfig,
 	type SingleResult,
-	MAX_CONCURRENCY,
 	resolveChildMaxSubagentDepth,
 } from "../../shared/types.ts";
 import { resolveModelCandidate } from "../shared/model-fallback.ts";
