@@ -94,14 +94,14 @@ export function widgetRenderKey(job: AsyncJobState): string {
 	});
 }
 
-function formatWidgetAgents(agents: string[]): string {
+export function formatWidgetAgents(agents: string[]): string {
 	const distinct = [...new Set(agents)];
 	if (distinct.length === 1 && agents.length > 1) return `${distinct[0]} ×${agents.length}`;
 	if (agents.length > 3) return `${agents.slice(0, 2).join(", ")} +${agents.length - 2} more`;
 	return agents.join(", ");
 }
 
-function widgetJobName(job: AsyncJobState): string {
+export function widgetJobName(job: AsyncJobState): string {
 	if (job.mode === "parallel") return "parallel";
 	if (job.mode === "chain") return "chain";
 	if (job.mode === "single" && job.agents?.length === 1) return job.agents[0]!;
@@ -109,7 +109,7 @@ function widgetJobName(job: AsyncJobState): string {
 	return job.mode ?? "subagent";
 }
 
-function widgetActivity(job: AsyncJobState): string {
+export function widgetActivity(job: AsyncJobState): string {
 	const facts: string[] = [];
 	if (job.currentTool && job.currentToolStartedAt !== undefined && job.updatedAt !== undefined) facts.push(`${job.currentTool} ${formatDuration(Math.max(0, job.updatedAt - job.currentToolStartedAt))}`);
 	else if (job.currentTool) facts.push(job.currentTool);
@@ -127,7 +127,7 @@ function widgetActivity(job: AsyncJobState): string {
 	return "Done";
 }
 
-function widgetStepRunningSeed(step: NonNullable<AsyncJobState["steps"]>[number], fallbackIndex?: number): number | undefined {
+export function widgetStepRunningSeed(step: NonNullable<AsyncJobState["steps"]>[number], fallbackIndex?: number): number | undefined {
 	return runningSeed(
 		fallbackIndex,
 		step.index,
@@ -140,13 +140,13 @@ function widgetStepRunningSeed(step: NonNullable<AsyncJobState["steps"]>[number]
 	);
 }
 
-function widgetStepsRunningSeed(steps: Array<NonNullable<AsyncJobState["steps"]>[number]> | undefined): number | undefined {
+export function widgetStepsRunningSeed(steps: Array<NonNullable<AsyncJobState["steps"]>[number]> | undefined): number | undefined {
 	let seed: number | undefined;
 	for (const [index, step] of (steps ?? []).entries()) seed = runningSeed(seed, widgetStepRunningSeed(step, index));
 	return seed;
 }
 
-function widgetJobRunningSeed(job: AsyncJobState): number | undefined {
+export function widgetJobRunningSeed(job: AsyncJobState): number | undefined {
 	return runningSeed(
 		job.updatedAt,
 		job.lastActivityAt,
@@ -160,13 +160,13 @@ function widgetJobRunningSeed(job: AsyncJobState): number | undefined {
 	);
 }
 
-function widgetJobsRunningSeed(jobs: AsyncJobState[]): number | undefined {
+export function widgetJobsRunningSeed(jobs: AsyncJobState[]): number | undefined {
 	let seed: number | undefined;
 	for (const job of jobs) seed = runningSeed(seed, widgetJobRunningSeed(job));
 	return seed;
 }
 
-function widgetStatusGlyph(job: AsyncJobState, theme: Theme): string {
+export function widgetStatusGlyph(job: AsyncJobState, theme: Theme): string {
 	if (job.status === "running") return theme.fg("accent", runningGlyph(widgetJobRunningSeed(job)));
 	if (job.status === "queued") return theme.fg("muted", "◦");
 	if (job.status === "complete") return theme.fg("success", "✓");
@@ -176,7 +176,7 @@ function widgetStatusGlyph(job: AsyncJobState, theme: Theme): string {
 
 // widgetStepGlyph and widgetStepStatus moved to render-helpers.ts
 
-function widgetStepActivity(step: NonNullable<AsyncJobState["steps"]>[number], snapshotNow?: number): string {
+export function widgetStepActivity(step: NonNullable<AsyncJobState["steps"]>[number], snapshotNow?: number): string {
 	const facts: string[] = [];
 	if (step.currentTool && step.currentToolStartedAt !== undefined && snapshotNow !== undefined) facts.push(`${step.currentTool} ${formatDuration(Math.max(0, snapshotNow - step.currentToolStartedAt))}`);
 	else if (step.currentTool) facts.push(step.currentTool);
@@ -191,7 +191,7 @@ function widgetStepActivity(step: NonNullable<AsyncJobState["steps"]>[number], s
 }
 
 
-function widgetChainDetails(job: AsyncJobState, theme: Theme, expanded = false, width = getTermWidth()): string[] {
+export function widgetChainDetails(job: AsyncJobState, theme: Theme, expanded = false, width = getTermWidth()): string[] {
 	if (!job.steps?.length) return [];
 	const total = job.chainStepCount ?? job.steps.length;
 	const lines: string[] = [];
@@ -212,7 +212,7 @@ function widgetChainDetails(job: AsyncJobState, theme: Theme, expanded = false, 
 	return lines;
 }
 
-function widgetParallelAgentDetails(job: AsyncJobState, theme: Theme, expanded = false, width = getTermWidth()): string[] {
+export function widgetParallelAgentDetails(job: AsyncJobState, theme: Theme, expanded = false, width = getTermWidth()): string[] {
 	if (!job.steps?.length) return [];
 	if (job.mode !== "parallel" && job.mode !== "chain") return [];
 	if (job.mode === "chain" && !job.activeParallelGroup && job.parallelGroups?.length) return widgetChainDetails(job, theme, expanded, width);
