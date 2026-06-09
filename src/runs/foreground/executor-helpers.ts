@@ -177,7 +177,7 @@ export function getForegroundControl(state: SubagentState, runId: string | undef
 	return newest;
 }
 
-export function formatForegroundActivity(control: SubagentState["foregroundControls"] extends Map<string, infer T> ? T : never): string | undefined {
+function formatForegroundActivity(control: SubagentState["foregroundControls"] extends Map<string, infer T> ? T : never): string | undefined {
 	const facts: string[] = [];
 	if (control.currentTool && control.currentToolStartedAt) facts.push(`tool ${control.currentTool} for ${Math.floor(Math.max(0, Date.now() - control.currentToolStartedAt) / 1000)}s`);
 	else if (control.currentTool) facts.push(`tool ${control.currentTool}`);
@@ -247,7 +247,7 @@ export function rememberForegroundRun(state: SubagentState, input: { runId: stri
 	}
 }
 
-export function resolveForegroundResumeTarget(params: SubagentParamsLike, state: SubagentState): { runId: string; mode: "single" | "parallel" | "chain"; state: "complete"; agent: string; index: number; intercomTarget: string; cwd: string; sessionFile: string } | undefined {
+function resolveForegroundResumeTarget(params: SubagentParamsLike, state: SubagentState): { runId: string; mode: "single" | "parallel" | "chain"; state: "complete"; agent: string; index: number; intercomTarget: string; cwd: string; sessionFile: string } | undefined {
 	const requested = (params.id ?? params.runId)?.trim();
 	if (!requested || !state.foregroundRuns?.size) return undefined;
 	const direct = state.foregroundRuns.get(requested);
@@ -268,7 +268,7 @@ export function resolveForegroundResumeTarget(params: SubagentParamsLike, state:
 	return { runId: run.runId, mode: run.mode, state: "complete", agent: child.agent, index, intercomTarget: resolveSubagentIntercomTarget(run.runId, child.agent, index), cwd: run.cwd, sessionFile };
 }
 
-export function resolveResumeTarget(params: SubagentParamsLike, state: SubagentState): ResumeSourceTarget {
+function resolveResumeTarget(params: SubagentParamsLike, state: SubagentState): ResumeSourceTarget {
 	const requested = (params.id ?? params.runId)?.trim() ?? "";
 	let foregroundTarget: ForegroundResumeSourceTarget | undefined;
 	let foregroundError: unknown;
@@ -310,7 +310,7 @@ export function resolveResumeTarget(params: SubagentParamsLike, state: SubagentS
 	throw new Error("Run not found. Provide id or runId.");
 }
 
-export function getAsyncInterruptTarget(state: SubagentState, runId: string | undefined): { asyncId: string; asyncDir: string } | undefined {
+function getAsyncInterruptTarget(state: SubagentState, runId: string | undefined): { asyncId: string; asyncDir: string } | undefined {
 	if (runId) {
 		const direct = state.asyncJobs.get(runId);
 		if (direct) return { asyncId: direct.asyncId, asyncDir: direct.asyncDir };
@@ -325,7 +325,7 @@ export function getAsyncInterruptTarget(state: SubagentState, runId: string | un
 	return newest ? { asyncId: newest.asyncId, asyncDir: newest.asyncDir } : undefined;
 }
 
-export function emitControlNotification(input: {
+function emitControlNotification(input: {
 	pi: ExtensionAPI;
 	controlConfig: ResolvedControlConfig;
 	intercomBridge: IntercomBridgeState;
@@ -385,7 +385,7 @@ export function interruptAsyncRun(state: SubagentState, runId: string | undefine
 	}
 }
 
-export function resolveNestedResumeTarget(match: ResolvedSubagentRunId & { kind: "nested" }, trustedSessionRoots: string[]): NestedResumeSourceTarget {
+function resolveNestedResumeTarget(match: ResolvedSubagentRunId & { kind: "nested" }, trustedSessionRoots: string[]): NestedResumeSourceTarget {
 	const run = match.match.run;
 	if (run.state === "running" || run.state === "queued") throw new Error(`Nested run '${run.id}' is live; route the follow-up to the owner process instead.`);
 	const agent = nestedRunAgent(run);
@@ -405,7 +405,7 @@ export function resolveNestedResumeTarget(match: ResolvedSubagentRunId & { kind:
 	};
 }
 
-export async function waitForNestedControlResult(target: ResolvedSubagentRunId & { kind: "nested" }, requestId: string, timeoutMs = 1_000) {
+async function waitForNestedControlResult(target: ResolvedSubagentRunId & { kind: "nested" }, requestId: string, timeoutMs = 1_000) {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		const result = readNestedControlResults(target.match.route).find((candidate) => candidate.requestId === requestId && candidate.targetRunId === target.match.run.id);
@@ -415,7 +415,7 @@ export async function waitForNestedControlResult(target: ResolvedSubagentRunId &
 	return undefined;
 }
 
-export async function sendNestedControlRequest(target: ResolvedSubagentRunId & { kind: "nested" }, action: "interrupt" | "resume", message?: string) {
+async function sendNestedControlRequest(target: ResolvedSubagentRunId & { kind: "nested" }, action: "interrupt" | "resume", message?: string) {
 	const requestId = randomUUID();
 	writeNestedControlRequest(target.match.route, {
 		ts: Date.now(),
@@ -427,7 +427,7 @@ export async function sendNestedControlRequest(target: ResolvedSubagentRunId & {
 	return waitForNestedControlResult(target, requestId);
 }
 
-export function directNestedAsyncInterrupt(target: ResolvedSubagentRunId & { kind: "nested" }): AgentToolResult<Details> | undefined {
+function directNestedAsyncInterrupt(target: ResolvedSubagentRunId & { kind: "nested" }): AgentToolResult<Details> | undefined {
 	const run = target.match.run;
 	const asyncDir = resolveNestedAsyncDir(target.match.rootRunId, run);
 	if (!asyncDir) return undefined;
@@ -455,7 +455,7 @@ export async function interruptNestedRun(target: ResolvedSubagentRunId & { kind:
 	return { content: [{ type: "text", text: `Nested run ${run.id} owner is not reachable and no safe direct async interrupt fallback is available.` }], isError: true, details: { mode: "management", results: [] } };
 }
 
-export async function resumeLiveNestedRun(input: { target: ResolvedSubagentRunId & { kind: "nested" }; message: string }): Promise<AgentToolResult<Details>> {
+async function resumeLiveNestedRun(input: { target: ResolvedSubagentRunId & { kind: "nested" }; message: string }): Promise<AgentToolResult<Details>> {
 	const run = input.target.match.run;
 	const result = await sendNestedControlRequest(input.target, "resume", input.message);
 	if (result) return { content: [{ type: "text", text: result.message }], isError: result.ok ? undefined : true, details: { mode: "management", results: [] } };
@@ -597,7 +597,7 @@ export async function resumeAsyncRun(input: {
 	return { content: [{ type: "text", text: formatAsyncStartedMessage(lines.join("\n")) }], details: result.details };
 }
 
-export function resultSummaryForIntercom(result: SingleResult): string {
+function resultSummaryForIntercom(result: SingleResult): string {
 	const output = getSingleResultOutput(result);
 	if (result.exitCode !== 0 && result.error) {
 		return output ? `${result.error}\n\nOutput:\n${output}` : result.error;
@@ -614,7 +614,7 @@ export function createForegroundControlNotifier(data: Pick<ExecutionContextData,
 	});
 }
 
-export async function emitForegroundResultIntercom(input: {
+async function emitForegroundResultIntercom(input: {
 	pi: ExtensionAPI;
 	intercomBridge: IntercomBridgeState;
 	runId: string;
