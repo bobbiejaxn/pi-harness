@@ -1,34 +1,245 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+/**
+ * Shared rendering helpers — truncation, formatting, glyph generation.
+ * Extracted from render.ts.
+ */
 
-function fuzzyScore(query: string, text: string): number {
-	const lq = query.toLowerCase();
-	const lt = text.toLowerCase();
-	if (lt.includes(lq)) return 100 + (lq.length / lt.length) * 50;
-	let score = 0;
-	let qi = 0;
-	let consecutive = 0;
-	for (let i = 0; i < lt.length && qi < lq.length; i++) {
-		if (lt[i] === lq[qi]) {
-			score += 10 + consecutive;
-			consecutive += 5;
-			qi++;
-		} else {
-			consecutive = 0;
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import {
+	type AgentProgress,
+	type Details,
+} from "../shared/types.ts";
+import { formatTokens, formatDuration, formatToolCall } from "../shared/formatters.ts";
+import { getDisplayItems } from "../shared/utils.ts";
+import { formatActivityLabel } from "../shared/status-format.ts";
+
+// Re-export Theme type for consumers
+export type Theme = import("@earendil-works/pi-coding-agent").ExtensionContext["ui"]["theme"];
+
+export const RUNNING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+export const STATIC_RUNNING_GLYPH = "●";
+
+export type ProgressSeedSource = Partial<Pick<AgentProgress, "index" | "toolCount" | "tokens" | "durationMs" | "lastActivityAt" | "currentToolStartedAt" | "turnCount">>;
+
+export type Theme = ExtensionContext["ui"]["theme"];
+
+export function getTermWidth(): number {
+	return process.stdout.columns || 120;
+}
+
+export const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * Truncate a line to maxWidth, preserving ANSI styling through the ellipsis.
+ * 
+ * pi-tui's truncateToWidth adds \x1b[0m before ellipsis which resets all styling,
+ * causing background color bleed in the TUI. This implementation tracks active
+ * ANSI styles and re-applies them before the ellipsis.
+ * 
+ * Uses Intl.Segmenter for proper Unicode/emoji handling (not char-by-char).
+ */
+export function truncLine(text: string, maxWidth: number): string {
+	if (visibleWidth(text) <= maxWidth) return text;
+
+	const targetWidth = maxWidth - 1;
+	let result = "";
+	let currentWidth = 0;
+	let activeStyles: string[] = [];
+	let i = 0;
+
+	while (i < text.length) {
+		const ansiMatch = text.slice(i).match(/^\x1b\[[0-9;]*m/);
+		if (ansiMatch) {
+			const code = ansiMatch[0];
+			result += code;
+
+			if (code === "\x1b[0m" || code === "\x1b[m") {
+				activeStyles = [];
+			} else {
+				activeStyles.push(code);
+			}
+			i += code.length;
+			continue;
 		}
+
+		let end = i;
+		while (end < text.length && !text.slice(end).match(/^\x1b\[[0-9;]*m/)) {
+			end++;
+		}
+
+		const textPortion = text.slice(i, end);
+		for (const seg of segmenter.segment(textPortion)) {
+			const grapheme = seg.segment;
+			const graphemeWidth = visibleWidth(grapheme);
+
+			if (currentWidth + graphemeWidth > targetWidth) {
+				return result + activeStyles.join("") + "…";
+			}
+
+			result += grapheme;
+			currentWidth += graphemeWidth;
+		}
+		i = end;
 	}
-	return qi === lq.length ? score : 0;
+
+	return result + activeStyles.join("") + "…";
 }
 
-export function fuzzyFilter<T extends { name: string; description: string; model?: string }>(items: T[], query: string): T[] {
-	const q = query.trim();
-	if (!q) return items;
-	return items
-		.map((item) => ({ item, score: Math.max(fuzzyScore(q, item.name), fuzzyScore(q, item.description) * 0.8, fuzzyScore(q, item.model ?? "") * 0.6) }))
-		.filter((x) => x.score > 0)
-		.sort((a, b) => b.score - a.score)
-		.map((x) => x.item);
+export function runningSeed(...values: Array<number | undefined>): number | undefined {
+	let seed: number | undefined;
+	for (const value of values) {
+		if (value === undefined || !Number.isFinite(value)) continue;
+		seed = (seed ?? 0) + Math.trunc(value);
+	}
+	return seed;
 }
+
+export function runningGlyph(seed?: number): string {
+	if (seed === undefined) return STATIC_RUNNING_GLYPH;
+	return RUNNING_FRAMES[Math.abs(seed) % RUNNING_FRAMES.length]!;
+}
+
+export function progressRunningSeed(progress: ProgressSeedSource | undefined): number | undefined {
+	if (!progress) return undefined;
+	return runningSeed(
+		progress.index,
+		progress.toolCount,
+		progress.tokens,
+		progress.durationMs,
+		progress.lastActivityAt,
+		progress.currentToolStartedAt,
+		progress.turnCount,
+	);
+}
+
+export interface LegacyResultAnimationContext {
+	state: { subagentResultAnimationTimer?: ReturnType<typeof setInterval> };
+}
+
+export function clearLegacyResultAnimationTimer(context: LegacyResultAnimationContext): void {
+	const timer = context.state.subagentResultAnimationTimer;
+	if (!timer) return;
+	clearInterval(timer);
+	context.state.subagentResultAnimationTimer = undefined;
+}
+
+export function extractOutputTarget(task: string): string | undefined {
+	const writeToMatch = task.match(/\[Write to:\s*([^\]\n]+)\]/i);
+	if (writeToMatch?.[1]?.trim()) return writeToMatch[1].trim();
+	const findingsMatch = task.match(/Write your findings to:\s*(\S+)/i);
+	if (findingsMatch?.[1]?.trim()) return findingsMatch[1].trim();
+	const outputMatch = task.match(/[Oo]utput(?:\s+to)?\s*:\s*(\S+)/i);
+	if (outputMatch?.[1]?.trim()) return outputMatch[1].trim();
+	return undefined;
+}
+
+export function hasEmptyTextOutputWithoutOutputTarget(task: string, output: string): boolean {
+	if (output.trim()) return false;
+	return !extractOutputTarget(task);
+}
+
+export function getToolCallLines(
+	result: Pick<Details["results"][number], "messages" | "toolCalls">,
+	expanded: boolean,
+): string[] {
+	if (result.messages) {
+		return getDisplayItems(result.messages)
+			.filter((item): item is { type: "tool"; name: string; args: Record<string, unknown> } => item.type === "tool")
+			.map((item) => formatToolCall(item.name, item.args, expanded));
+	}
+	return result.toolCalls?.map((toolCall) => expanded ? toolCall.expandedText : toolCall.text) ?? [];
+}
+
+
+export function snapshotNowForProgress(progress: Pick<AgentProgress, "currentToolStartedAt" | "durationMs" | "lastActivityAt">): number | undefined {
+	if (progress.currentToolStartedAt !== undefined && progress.durationMs !== undefined) return progress.currentToolStartedAt + progress.durationMs;
+	return progress.lastActivityAt;
+}
+
+export function formatCurrentToolLine(
+	progress: Pick<AgentProgress, "currentTool" | "currentToolArgs" | "currentToolStartedAt">,
+	availableWidth: number,
+	expanded: boolean,
+	snapshotNow?: number,
+): string | undefined {
+	if (!progress.currentTool) return undefined;
+	const maxToolArgsLen = Math.max(50, availableWidth - 20);
+	const toolArgsPreview = progress.currentToolArgs
+		? (expanded || progress.currentToolArgs.length <= maxToolArgsLen
+			? progress.currentToolArgs
+			: `${progress.currentToolArgs.slice(0, maxToolArgsLen)}...`)
+		: "";
+	const durationSuffix = progress.currentToolStartedAt !== undefined && snapshotNow !== undefined
+		? ` | ${formatDuration(Math.max(0, snapshotNow - progress.currentToolStartedAt))}`
+		: "";
+	return toolArgsPreview
+		? `${progress.currentTool}: ${toolArgsPreview}${durationSuffix}`
+		: `${progress.currentTool}${durationSuffix}`;
+}
+
+export function buildLiveStatusLine(progress: Pick<AgentProgress, "activityState" | "lastActivityAt">, snapshotNow?: number): string | undefined {
+	if (progress.lastActivityAt !== undefined && snapshotNow !== undefined) return formatActivityLabel(progress.lastActivityAt, progress.activityState, snapshotNow);
+	if (progress.activityState === "needs_attention") return "needs attention";
+	if (progress.activityState === "active_long_running") return "active but long-running";
+	if (progress.lastActivityAt !== undefined) return "active";
+	return undefined;
+}
+
+export function themeBold(theme: Theme, text: string): string {
+	return ((theme as { bold?: (value: string) => string }).bold?.(text)) ?? text;
+}
+
+export function statJoin(theme: Theme, parts: string[]): string {
+	return parts.filter(Boolean).map((part) => theme.fg("dim", part)).join(` ${theme.fg("dim", "·")} `);
+}
+
+export function formatTokenStat(tokens: number): string {
+	return `${formatTokens(tokens)} token`;
+}
+
+export function formatToolUseStat(count: number): string {
+	return `${count} tool use${count === 1 ? "" : "s"}`;
+}
+
+export function formatProgressStats(theme: Theme, progress: Pick<AgentProgress, "toolCount" | "tokens" | "durationMs"> | undefined, includeDuration = true): string {
+	if (!progress) return "";
+	const parts: string[] = [];
+	if (progress.toolCount > 0) parts.push(formatToolUseStat(progress.toolCount));
+	if (progress.tokens > 0) parts.push(formatTokenStat(progress.tokens));
+	if (includeDuration && progress.durationMs > 0) parts.push(formatDuration(progress.durationMs));
+	return statJoin(theme, parts);
+}
+
+export function firstOutputLine(text: string): string {
+	return text.split("\n").find((line) => line.trim())?.trim() ?? "";
+}
+
+export function resultStatusLine(result: Details["results"][number], output: string): string {
+	if (result.detached) return result.detachedReason ? `Detached: ${result.detachedReason}` : "Detached";
+	if (result.interrupted) return "Paused";
+	if (result.exitCode !== 0) return `Error: ${result.error ?? (firstOutputLine(output) || `exit ${result.exitCode}`)}`;
+	if (result.acceptance?.status && result.acceptance.status !== "not-required") return `Done · acceptance: ${result.acceptance.status}`;
+	if (hasEmptyTextOutputWithoutOutputTarget(result.task, output)) return "Done (no text output)";
+	return "Done";
+}
+
+export function resultGlyph(result: Details["results"][number], output: string, theme: Theme, running = result.progress?.status === "running", seed = progressRunningSeed(result.progress ?? result.progressSummary)): string {
+	if (running) return theme.fg("accent", runningGlyph(seed));
+	if (result.detached) return theme.fg("warning", "■");
+	if (result.interrupted) return theme.fg("warning", "■");
+	if (result.exitCode !== 0) return theme.fg("error", "✗");
+	if (hasEmptyTextOutputWithoutOutputTarget(result.task, output)) return theme.fg("warning", "✓");
+	return theme.fg("success", "✓");
+}
+
+export function compactCurrentActivity(progress: AgentProgress): string {
+	const snapshotNow = snapshotNowForProgress(progress);
+	return formatCurrentToolLine(progress, getTermWidth() - 4, false, snapshotNow) ?? buildLiveStatusLine(progress, snapshotNow) ?? "thinking…";
+}
+
+// ── TUI row helpers (from original render-helpers.ts) ────────────────────────
+
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 export function pad(s: string, len: number): string {
 	const vis = visibleWidth(s);
@@ -40,41 +251,4 @@ export function row(content: string, width: number, theme: Theme): string {
 	const singleLine = content.replace(/[\r\n]+/g, " ").replace(/\t/g, "  ");
 	const clipped = truncateToWidth(singleLine, innerW);
 	return theme.fg("border", "│") + pad(clipped, innerW) + theme.fg("border", "│");
-}
-
-export function renderHeader(text: string, width: number, theme: Theme): string {
-	const innerW = width - 2;
-	const padLen = Math.max(0, innerW - visibleWidth(text));
-	const padLeft = Math.floor(padLen / 2);
-	const padRight = padLen - padLeft;
-	return (
-		theme.fg("border", "╭" + "─".repeat(padLeft)) +
-		theme.fg("accent", text) +
-		theme.fg("border", "─".repeat(padRight) + "╮")
-	);
-}
-
-export function formatPath(filePath: string): string {
-	const home = process.env.HOME;
-	if (home && filePath.startsWith(home)) return `~${filePath.slice(home.length)}`;
-	return filePath;
-}
-
-export function formatScrollInfo(above: number, below: number): string {
-	let info = "";
-	if (above > 0) info += `↑ ${above} more`;
-	if (below > 0) info += `${info ? "  " : ""}↓ ${below} more`;
-	return info;
-}
-
-export function renderFooter(text: string, width: number, theme: Theme): string {
-	const innerW = width - 2;
-	const padLen = Math.max(0, innerW - visibleWidth(text));
-	const padLeft = Math.floor(padLen / 2);
-	const padRight = padLen - padLeft;
-	return (
-		theme.fg("border", "╰" + "─".repeat(padLeft)) +
-		theme.fg("dim", text) +
-		theme.fg("border", "─".repeat(padRight) + "╯")
-	);
 }
