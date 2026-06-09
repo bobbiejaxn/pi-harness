@@ -25,6 +25,28 @@ import {
 	resumeTargetExact,
 	validateNestedSessionFile,
 } from "./run-utils.ts";
+import {
+	type AsyncResumeSourceTarget,
+	type ExecutionContextData,
+	type ExecutorDeps,
+	type ForegroundParallelRunInput,
+	type ForegroundResumeSourceTarget,
+	type NestedResumeSourceTarget,
+	type ResumeSourceTarget,
+	type SubagentParamsLike,
+	type TaskParam,
+} from "./executor-types.ts";
+export type {
+	AsyncResumeSourceTarget,
+	ExecutionContextData,
+	ExecutorDeps,
+	ForegroundParallelRunInput,
+	ForegroundResumeSourceTarget,
+	NestedResumeSourceTarget,
+	ResumeSourceTarget,
+	SubagentParamsLike,
+	TaskParam,
+} from "./executor-types.ts";
 import type { CircuitBreaker } from "../../shared/circuit-breaker.ts";
 import type { SessionLearner, RunHint } from "../../shared/session-learner.ts";
 import { resolveMerge, type MergeResolverOptions, type MergeResolutionResult } from "../../shared/merge-resolver.ts";
@@ -108,100 +130,6 @@ import {
 
 const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
 const MUTATING_MANAGEMENT_ACTIONS = new Set(["create", "update", "delete"]);
-
-interface TaskParam {
-	agent: string;
-	task: string;
-	cwd?: string;
-	count?: number;
-	output?: string | boolean;
-	outputMode?: "inline" | "file-only";
-	reads?: string[] | boolean;
-	progress?: boolean;
-	model?: string;
-	skill?: string | string[] | boolean;
-	acceptance?: AcceptanceInput;
-}
-
-export interface SubagentParamsLike {
-	action?: string;
-	id?: string;
-	runId?: string;
-	dir?: string;
-	index?: number;
-	agent?: string;
-	task?: string;
-	message?: string;
-	chain?: ChainStep[];
-	tasks?: TaskParam[];
-	concurrency?: number;
-	worktree?: boolean;
-	context?: "fresh" | "fork";
-	async?: boolean;
-	clarify?: boolean;
-	share?: boolean;
-	control?: ControlConfig;
-	sessionDir?: string;
-	cwd?: string;
-	maxOutput?: MaxOutputConfig;
-	artifacts?: boolean;
-	includeProgress?: boolean;
-	model?: string;
-	skill?: string | string[] | boolean;
-	output?: string | boolean;
-	outputMode?: "inline" | "file-only";
-	agentScope?: unknown;
-	chainDir?: string;
-	acceptance?: AcceptanceInput;
-}
-
-interface ExecutorDeps {
-	pi: ExtensionAPI;
-	state: SubagentState;
-	config: ExtensionConfig;
-	asyncByDefault: boolean;
-	tempArtifactsDir: string;
-	getSubagentSessionRoot: (parentSessionFile: string | null) => string;
-	expandTilde: (p: string) => string;
-	discoverAgents: (cwd: string, scope: AgentScope) => { agents: AgentConfig[] };
-	allowMutatingManagementActions?: boolean;
-	// Cost & Reliability
-	costGuardConfig?: import("../../shared/cost-guard.ts").ResolvedCostGuardConfig;
-	sessionCostTracker?: import("../../shared/cost-guard.ts").SessionCostTracker;
-	retryConfig?: import("../../shared/retry-logic.ts").ResolvedRetryConfig;
-	timeoutConfig?: import("../../shared/cascading-timeout.ts").ResolvedTimeoutConfig;
-	// Domain & Tool Restrictions
-	domain?: import("../../shared/domain-enforcement.ts").DomainRule[];
-	expertise?: import("../../shared/domain-enforcement.ts").ExpertiseEntry[];
-	allowedTools?: string[];
-	// Circuit Breaker & Execution Guard
-	circuitBreaker?: import("../../shared/circuit-breaker.ts").CircuitBreaker;
-	sessionLearner?: import("../../shared/session-learner.ts").SessionLearner;
-	mergeResolverOptions?: import("../../shared/merge-resolver.ts").MergeResolverOptions;
-	/** Parent session model ID (e.g. 'zai/glm-5.1'). Passed to merge resolver. */
-	parentModel?: string;
-}
-
-interface ExecutionContextData {
-	params: SubagentParamsLike;
-	effectiveCwd: string;
-	ctx: ExtensionContext;
-	signal: AbortSignal;
-	onUpdate?: (r: AgentToolResult<Details>) => void;
-	agents: AgentConfig[];
-	runId: string;
-	shareEnabled: boolean;
-	sessionRoot: string;
-	sessionDirForIndex: (idx?: number) => string;
-	sessionFileForIndex: (idx?: number) => string | undefined;
-	artifactConfig: ArtifactConfig;
-	artifactsDir: string;
-	backgroundRequestedWhileClarifying: boolean;
-	effectiveAsync: boolean;
-	controlConfig: ResolvedControlConfig;
-	intercomBridge: IntercomBridgeState;
-	nestedRoute?: NestedRouteInfo;
-}
 
 function resolveRequestedCwd(runtimeCwd: string, requestedCwd: string | undefined): string {
 	return requestedCwd ? path.resolve(runtimeCwd, requestedCwd) : runtimeCwd;
@@ -310,21 +238,6 @@ function resolveForegroundResumeTarget(params: SubagentParamsLike, state: Subage
 	if (!fs.existsSync(sessionFile)) throw new Error(`Foreground run '${run.runId}' child ${index} session file does not exist: ${child.sessionFile}`);
 	return { runId: run.runId, mode: run.mode, state: "complete", agent: child.agent, index, intercomTarget: resolveSubagentIntercomTarget(run.runId, child.agent, index), cwd: run.cwd, sessionFile };
 }
-
-type AsyncResumeSourceTarget = ReturnType<typeof resolveAsyncResumeTarget> & { source: "async" };
-type ForegroundResumeSourceTarget = NonNullable<ReturnType<typeof resolveForegroundResumeTarget>> & { kind: "revive"; source: "foreground" };
-type NestedResumeSourceTarget = {
-	kind: "revive";
-	source: "nested";
-	runId: string;
-	state: "complete" | "failed" | "paused";
-	agent: string;
-	index: number;
-	intercomTarget: string;
-	cwd?: string;
-	sessionFile: string;
-};
-type ResumeSourceTarget = AsyncResumeSourceTarget | ForegroundResumeSourceTarget | NestedResumeSourceTarget;
 
 function resolveResumeTarget(params: SubagentParamsLike, state: SubagentState): ResumeSourceTarget {
 	const requested = (params.id ?? params.runId)?.trim() ?? "";
@@ -1302,38 +1215,6 @@ async function runChainPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
 	}
 
 	return chainDetails ? { ...chainResult, details: chainDetails } : chainResult;
-}
-
-interface ForegroundParallelRunInput {
-	tasks: TaskParam[];
-	taskTexts: string[];
-	agents: AgentConfig[];
-	ctx: ExtensionContext;
-	intercomEvents: IntercomEventBus;
-	signal: AbortSignal;
-	runId: string;
-	sessionDirForIndex: (idx?: number) => string | undefined;
-	sessionFileForIndex: (idx?: number) => string | undefined;
-	shareEnabled: boolean;
-	artifactConfig: ArtifactConfig;
-	artifactsDir: string;
-	maxOutput?: MaxOutputConfig;
-	paramsCwd: string;
-	maxSubagentDepths: number[];
-	availableModels: ModelInfo[];
-	modelOverrides: (string | undefined)[];
-	behaviors: Array<ReturnType<typeof resolveStepBehavior>>;
-	firstProgressIndex: number;
-	controlConfig: ResolvedControlConfig;
-	onControlEvent?: (event: ControlEvent) => void;
-	childIntercomTarget?: (agent: string, index: number) => string | undefined;
-	orchestratorIntercomTarget?: string;
-	foregroundControl?: SubagentState["foregroundControls"] extends Map<string, infer T> ? T : never;
-	concurrencyLimit: number;
-	liveResults: (SingleResult | undefined)[];
-	liveProgress: (AgentProgress | undefined)[];
-	onUpdate?: (r: AgentToolResult<Details>) => void;
-	worktreeSetup?: WorktreeSetup;
 }
 
 function buildParallelModeError(message: string): AgentToolResult<Details> {
