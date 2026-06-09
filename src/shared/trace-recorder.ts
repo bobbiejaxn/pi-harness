@@ -161,6 +161,10 @@ export class TraceRecorder {
 	}
 
 	private handleEvent(eventName: string, payload: unknown): void {
+		// This is the bus-receive role. Called by `pi.events.on(...)` handlers
+		// we registered in install(). We write to file but DO NOT re-emit on
+		// the bus — that would create infinite recursion (emit → handler →
+		// emit → handler → ...).
 		// Determine the trace file for this event. Priority:
 		// 1. payload.traceRunId (if present)
 		// 2. payload.runId (fallback)
@@ -189,6 +193,23 @@ export class TraceRecorder {
 				}
 			});
 		this.writeQueue.set(traceId, next);
+	}
+
+	/**
+	 * Public emit — use this from cron jobs, the extension, or any other
+	 * producer that wants to surface an event AND have it persisted.
+	 *
+	 * This is the only path that calls `pi.events.emit` — it does NOT go
+	 * through `handleEvent` (that would be the bus-receive path and would
+	 * create infinite recursion).
+	 *
+	 * Other consumers (like the file writer via `install()`) will receive
+	 * the event through their normal `pi.events.on(...)` subscriptions.
+	 */
+	emit(eventName: string, payload: unknown): void {
+		const bus = (this.pi as { events?: { emit?: (e: string, p: unknown) => void } }).events;
+		if (!bus?.emit) return; // No bus to emit on (test isolation or minimal fake)
+		try { bus.emit(eventName, payload); } catch { /* non-fatal */ }
 	}
 
 	private async writeLine(filePath: string, line: TraceLine): Promise<void> {
