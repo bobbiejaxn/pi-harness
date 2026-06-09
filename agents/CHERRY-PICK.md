@@ -1,9 +1,9 @@
 # Agent Cherry-Pick: pi_launchpad → pi-harness
 
-**Date:** 2026-06-09
+**Date:** 2026-06-09 (last updated)
 **pi_launchpad roster:** 56 agents in `.pi/agents/` + 8 in `.pi/agents/board/` = **64 agents**
-**pi-harness roster:** 8 agents (scout, worker, planner, reviewer, researcher, oracle, context-builder, delegate)
-**Target:** ~32 agents in pi-harness (down from 64, drop 50% by removing overlap)
+**pi-harness roster:** 8 base + 23 promoted + 8 board (incl. board-ceo moderator) = **39 agents**
+**Target:** ~32 agents in pi-harness + 8 board (separate deliberation subsystem)
 
 ## Decision Rules
 
