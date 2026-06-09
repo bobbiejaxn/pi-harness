@@ -14,6 +14,17 @@ import { handleManagementAction } from "../../agents/agent-management.ts";
 import { buildDoctorReport } from "../../extension/doctor.ts";
 import { clearPendingForegroundControlNotices } from "../../extension/control-notices.ts";
 import { runSync } from "./execution.ts";
+import {
+	escapeRegExp,
+	isAsyncRunNotFound,
+	isExactResumeError,
+	isResumeAmbiguity,
+	nestedRunAgent,
+	nestedRunSessionFile,
+	pathWithin,
+	resumeTargetExact,
+	validateNestedSessionFile,
+} from "./run-utils.ts";
 import type { CircuitBreaker } from "../../shared/circuit-breaker.ts";
 import type { SessionLearner, RunHint } from "../../shared/session-learner.ts";
 import { resolveMerge, type MergeResolverOptions, type MergeResolutionResult } from "../../shared/merge-resolver.ts";
@@ -315,27 +326,6 @@ type NestedResumeSourceTarget = {
 };
 type ResumeSourceTarget = AsyncResumeSourceTarget | ForegroundResumeSourceTarget | NestedResumeSourceTarget;
 
-function isAsyncRunNotFound(error: unknown): boolean {
-	return error instanceof Error && error.message.startsWith("Async run not found.");
-}
-
-function isResumeAmbiguity(error: unknown): boolean {
-	return error instanceof Error && /Ambiguous .*run id prefix/.test(error.message);
-}
-
-function resumeTargetExact(target: { runId: string } | undefined, requested: string): boolean {
-	return target?.runId === requested;
-}
-
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function isExactResumeError(error: unknown, source: "async" | "foreground", requested: string): boolean {
-	if (!(error instanceof Error) || !requested) return false;
-	return new RegExp(`\\b${source} run '${escapeRegExp(requested)}'`, "i").test(error.message);
-}
-
 function resolveResumeTarget(params: SubagentParamsLike, state: SubagentState): ResumeSourceTarget {
 	const requested = (params.id ?? params.runId)?.trim() ?? "";
 	let foregroundTarget: ForegroundResumeSourceTarget | undefined;
@@ -451,42 +441,6 @@ function interruptAsyncRun(state: SubagentState, runId: string | undefined): Age
 			details: { mode: "management", results: [] },
 		};
 	}
-}
-
-function nestedRunSessionFile(run: NestedRunSummary): string | undefined {
-	return run.sessionFile ?? (run.steps?.length === 1 ? run.steps[0]?.sessionFile : undefined);
-}
-
-function nestedRunAgent(run: NestedRunSummary): string | undefined {
-	return run.agent ?? run.agents?.[0] ?? (run.steps?.length === 1 ? run.steps[0]?.agent : undefined);
-}
-
-function pathWithin(base: string, candidate: string): boolean {
-	const resolvedBase = path.resolve(base);
-	const resolvedCandidate = path.resolve(candidate);
-	return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
-}
-
-function validateNestedSessionFile(run: NestedRunSummary, trustedSessionRoots: string[]): string {
-	const sessionFile = nestedRunSessionFile(run);
-	if (!sessionFile) throw new Error(`Nested run '${run.id}' does not have a persisted session file to resume from.`);
-	if (path.extname(sessionFile) !== ".jsonl") throw new Error(`Nested run '${run.id}' session file must be a .jsonl file: ${sessionFile}`);
-	const resolved = path.resolve(sessionFile);
-	if (!path.isAbsolute(sessionFile)) throw new Error(`Nested run '${run.id}' session file must be absolute: ${sessionFile}`);
-	if (!fs.existsSync(resolved)) throw new Error(`Nested run '${run.id}' session file does not exist: ${sessionFile}`);
-	const stat = fs.lstatSync(resolved);
-	if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Nested run '${run.id}' session file is not a regular file: ${sessionFile}`);
-	const realSessionFile = fs.realpathSync(resolved);
-	const trustedRoots = trustedSessionRoots
-		.filter((root) => fs.existsSync(root))
-		.map((root) => fs.realpathSync(root));
-	if (!trustedRoots.some((root) => pathWithin(root, realSessionFile))) {
-		throw new Error(`Nested run '${run.id}' session file is outside trusted nested session roots: ${sessionFile}`);
-	}
-	if (!realSessionFile.split(path.sep).includes(run.id)) {
-		throw new Error(`Nested run '${run.id}' session file is not under that nested run's session directory: ${sessionFile}`);
-	}
-	return realSessionFile;
 }
 
 function resolveNestedResumeTarget(match: ResolvedSubagentRunId & { kind: "nested" }, trustedSessionRoots: string[]): NestedResumeSourceTarget {
