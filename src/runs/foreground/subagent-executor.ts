@@ -2244,8 +2244,8 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		allowedTools: deps.allowedTools,
 		// Execution guard with learner-enhanced timeout
 		executionGuard: learnerHint?.suggestedTimeoutMs
-			? { ...(config.executionGuard ?? {}), stallTimeoutMs: learnerHint.suggestedTimeoutMs }
-			: config.executionGuard,
+			? { ...(deps.config.executionGuard ?? {}), stallTimeoutMs: learnerHint.suggestedTimeoutMs }
+			: deps.config.executionGuard,
 	});
 
 	// Record result for circuit breaker + session learner
