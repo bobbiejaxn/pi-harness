@@ -43,6 +43,7 @@ import { resolveCostGuardConfig, SessionCostTracker } from "../shared/cost-guard
 import { resolveRetryConfig } from "../shared/retry-logic.ts";
 import { resolveTimeoutConfig } from "../shared/cascading-timeout.ts";
 import { resolveTraceRunId } from "../shared/trace-propagation.ts";
+import { TraceRecorder } from "../shared/trace-recorder.ts";
 import { checkAllowedAgent } from "../shared/allowed-agents-guard.ts";
 import {
 	SUBAGENT_RUN_START_EVENT,
@@ -243,6 +244,12 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 
 	const config = loadConfig();
 	const asyncByDefault = config.asyncByDefault === true;
+
+	// Install the trace recorder (writes subagent events to JSONL files
+	// under .pi/traces/subagents/ for downstream consumers like the
+	// morning report, harness evolver, and pi-agent-observability).
+	const traceRecorder = new TraceRecorder(pi);
+	traceRecorder.install();
 	const costGuardConfig = resolveCostGuardConfig(config.cost);
 	const retryConfig = resolveRetryConfig(config.retry);
 	const timeoutConfig = resolveTimeoutConfig(config.timeout);
