@@ -53,6 +53,9 @@ import {
 	resultStatusLine,
 	resultGlyph,
 	compactCurrentActivity,
+	widgetStepGlyph,
+	widgetStepStatus,
+	modelThinkingBadge,
 } from "./render-helpers.ts";
 // Re-export for backward compat
 export { clearLegacyResultAnimationTimer } from "./render-helpers.ts";
@@ -166,21 +169,7 @@ function widgetStatusGlyph(job: AsyncJobState, theme: Theme): string {
 	return theme.fg("error", "✗");
 }
 
-function widgetStepGlyph(status: AsyncJobStep["status"], theme: Theme, seed?: number): string {
-	if (status === "running") return theme.fg("accent", runningGlyph(seed));
-	if (status === "complete" || status === "completed") return theme.fg("success", "✓");
-	if (status === "failed") return theme.fg("error", "✗");
-	if (status === "paused") return theme.fg("warning", "■");
-	return theme.fg("muted", "◦");
-}
-
-function widgetStepStatus(status: AsyncJobStep["status"], theme: Theme): string {
-	if (status === "running") return theme.fg("accent", "running");
-	if (status === "complete" || status === "completed") return theme.fg("success", "complete");
-	if (status === "failed") return theme.fg("error", "failed");
-	if (status === "paused") return theme.fg("warning", "paused");
-	return theme.fg("dim", status);
-}
+// widgetStepGlyph and widgetStepStatus moved to render-helpers.ts
 
 function widgetStepActivity(step: NonNullable<AsyncJobState["steps"]>[number], snapshotNow?: number): string {
 	const facts: string[] = [];
@@ -302,10 +291,7 @@ function widgetStepStats(theme: Theme, step: NonNullable<AsyncJobState["steps"]>
 	]);
 }
 
-function modelThinkingBadge(theme: Theme, model?: string, thinking?: string): string {
-	const label = formatModelThinking(model, thinking);
-	return label ? theme.fg("dim", ` (${label})`) : "";
-}
+// modelThinkingBadge moved to render-helpers.ts
 
 function widgetStepActivityLine(step: NonNullable<AsyncJobState["steps"]>[number], width: number, expanded: boolean, snapshotNow?: number): string {
 	const toolLine = formatCurrentToolLine(step, width, expanded, snapshotNow);

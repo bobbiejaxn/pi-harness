@@ -9,7 +9,7 @@ import {
 	type AgentProgress,
 	type Details,
 } from "../shared/types.ts";
-import { formatTokens, formatDuration, formatToolCall } from "../shared/formatters.ts";
+import { formatTokens, formatDuration, formatToolCall, formatModelThinking } from "../shared/formatters.ts";
 import { getDisplayItems } from "../shared/utils.ts";
 import { formatActivityLabel } from "../shared/status-format.ts";
 
@@ -251,4 +251,27 @@ export function row(content: string, width: number, theme: Theme): string {
 	const singleLine = content.replace(/[\r\n]+/g, " ").replace(/\t/g, "  ");
 	const clipped = truncateToWidth(singleLine, innerW);
 	return theme.fg("border", "│") + pad(clipped, innerW) + theme.fg("border", "│");
+}
+
+// ── Widget glyph helpers (shared with render-result.ts) ────────────────────
+
+export function widgetStepGlyph(status: string, theme: Theme, seed?: number): string {
+	if (status === "running") return theme.fg("accent", runningGlyph(seed));
+	if (status === "complete" || status === "completed") return theme.fg("success", "✓");
+	if (status === "failed") return theme.fg("error", "✗");
+	if (status === "paused") return theme.fg("warning", "■");
+	return theme.fg("muted", "◦");
+}
+
+export function widgetStepStatus(status: string, theme: Theme): string {
+	if (status === "running") return theme.fg("accent", "running");
+	if (status === "complete" || status === "completed") return theme.fg("success", "complete");
+	if (status === "failed") return theme.fg("error", "failed");
+	if (status === "paused") return theme.fg("warning", "paused");
+	return theme.fg("dim", status);
+}
+
+export function modelThinkingBadge(theme: Theme, model?: string, thinking?: string): string {
+	const label = formatModelThinking(model, thinking);
+	return label ? theme.fg("dim", ` (${label})`) : "";
 }

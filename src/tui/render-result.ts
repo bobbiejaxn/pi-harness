@@ -57,28 +57,8 @@ import {
 	workflowGraphHasStatus,
 } from "./render-chain.ts";
 
-// ── Local copies of widget helpers (avoid circular dependency on render.ts) ──
-
-function widgetStepGlyph(status: string, theme: Theme, seed?: number): string {
-	if (status === "running") return theme.fg("accent", runningGlyph(seed));
-	if (status === "complete" || status === "completed") return theme.fg("success", "✓");
-	if (status === "failed") return theme.fg("error", "✗");
-	if (status === "paused") return theme.fg("warning", "■");
-	return theme.fg("muted", "◦");
-}
-
-function widgetStepStatus(status: string, theme: Theme): string {
-	if (status === "running") return theme.fg("accent", "running");
-	if (status === "complete" || status === "completed") return theme.fg("success", "complete");
-	if (status === "failed") return theme.fg("error", "failed");
-	if (status === "paused") return theme.fg("warning", "paused");
-	return theme.fg("muted", status);
-}
-
-function modelThinkingBadge(theme: Theme, model?: string, thinking?: string): string {
-	const label = formatModelThinking(model, thinking);
-	return label ? theme.fg("dim", ` (${label})`) : "";
-}
+// Widget helpers imported from render-helpers.ts
+import { widgetStepGlyph, widgetStepStatus, modelThinkingBadge } from "./render-helpers.ts";
 
 // ── Result rendering functions ──────────────────────────────────────────────
 
