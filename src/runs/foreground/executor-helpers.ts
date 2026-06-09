@@ -156,8 +156,8 @@ import {
 import { runAsyncPath } from "./run-async.ts";
 
 
-const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
-const MUTATING_MANAGEMENT_ACTIONS = new Set(["create", "update", "delete"]);
+export const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
+export const MUTATING_MANAGEMENT_ACTIONS = new Set(["create", "update", "delete"]);
 
 
 export function resolveRequestedCwd(runtimeCwd: string, requestedCwd: string | undefined): string {

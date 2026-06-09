@@ -178,8 +178,8 @@ import {
 
 
 
-const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
-const MUTATING_MANAGEMENT_ACTIONS = new Set(["create", "update", "delete"]);
+// Shared constants from executor-helpers.ts
+import { ASYNC_INTERRUPT_SIGNAL, MUTATING_MANAGEMENT_ACTIONS } from "./executor-helpers.ts";
 
 
 export async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): Promise<AgentToolResult<Details>> {
