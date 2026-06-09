@@ -7,125 +7,44 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveTraceRunId } from "../../shared/trace-propagation.ts";
 import { type AgentConfig, type AgentScope } from "../../agents/agents.ts";
-import { getArtifactsDir } from "../../shared/artifacts.ts";
 import { ChainClarifyComponent, type ChainClarifyResult } from "./chain-clarify.ts";
 import { toModelInfo, type ModelInfo } from "../../shared/model-info.ts";
-import { executeChain } from "./chain-execution.ts";
-import { resolveExecutionAgentScope } from "../../agents/agent-scope.ts";
-import { handleManagementAction } from "../../agents/agent-management.ts";
-import { buildDoctorReport } from "../../extension/doctor.ts";
-import { clearPendingForegroundControlNotices } from "../../extension/control-notices.ts";
 import { runSync } from "./execution.ts";
 import {
-	escapeRegExp,
-	isAsyncRunNotFound,
-	isExactResumeError,
-	isResumeAmbiguity,
-	nestedRunAgent,
-	nestedRunSessionFile,
-	pathWithin,
-	resumeTargetExact,
-	validateNestedSessionFile,
-} from "./run-utils.ts";
-import {
-	type AsyncResumeSourceTarget,
 	type ExecutionContextData,
 	type ExecutorDeps,
-	type ForegroundParallelRunInput,
-	type ForegroundResumeSourceTarget,
-	type NestedResumeSourceTarget,
-	type ResumeSourceTarget,
-	type SubagentParamsLike,
-	type TaskParam,
 } from "./executor-types.ts";
 export type {
-	AsyncResumeSourceTarget,
 	ExecutionContextData,
 	ExecutorDeps,
-	ForegroundParallelRunInput,
-	ForegroundResumeSourceTarget,
-	NestedResumeSourceTarget,
-	ResumeSourceTarget,
-	SubagentParamsLike,
-	TaskParam,
 } from "./executor-types.ts";
-import type { CircuitBreaker } from "../../shared/circuit-breaker.ts";
-import type { SessionLearner, RunHint } from "../../shared/session-learner.ts";
 import { resolveMerge, type MergeResolverOptions, type MergeResolutionResult } from "../../shared/merge-resolver.ts";
 import { resolveModelCandidate } from "../shared/model-fallback.ts";
 import { aggregateParallelOutputs } from "../shared/parallel-utils.ts";
 import { recordRun } from "../shared/run-history.ts";
 import {
-	buildChainInstructions,
 	writeInitialProgressFile,
-	getStepAgents,
-	isParallelStep,
-	isDynamicParallelStep,
 	resolveStepBehavior,
 	suppressProgressForReadOnlyTask,
 	taskDisallowsFileUpdates,
-	type ChainStep,
-	type ResolvedStepBehavior,
-	type SequentialStep,
 	type StepOverrides,
 } from "../../shared/settings.ts";
 import { discoverAvailableSkills, normalizeSkillInput } from "../../agents/skills.ts";
 import { executeAsyncChain, executeAsyncSingle, formatAsyncStartedMessage, isAsyncAvailable } from "../background/async-execution.ts";
-import { createForkContextResolver } from "../../shared/fork-context.ts";
-import { resolveCurrentSessionId } from "../../shared/session-identity.ts";
 import { applyIntercomBridgeToAgent, INTERCOM_BRIDGE_MARKER, resolveIntercomBridge, resolveIntercomSessionTarget, resolveSubagentIntercomTarget, type IntercomBridgeState } from "../../intercom/intercom-bridge.ts";
-import { formatControlIntercomMessage, formatControlNoticeMessage, resolveControlConfig, shouldNotifyControlEvent } from "../shared/subagent-control.ts";
 import { finalizeSingleOutput, injectSingleOutputInstruction, normalizeSingleOutputOverride, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
 import { compactForegroundDetails, getSingleResultOutput, mapConcurrent, readStatus, resolveChildCwd } from "../../shared/utils.ts";
-import {
-	attachNestedChildrenToResultChildren,
-	buildSubagentResultIntercomPayload,
-	deliverSubagentIntercomMessageEvent,
-	deliverSubagentResultIntercomEvent,
-	formatSubagentResultReceipt,
-	resolveSubagentResultStatus,
-	stripDetailsOutputsForIntercomReceipt,
-} from "../../intercom/result-intercom.ts";
-import { buildRevivedAsyncTask, resolveAsyncResumeTarget } from "../background/async-resume.ts";
 import { createNestedRoute, readNestedControlResults, resolveInheritedNestedRouteFromEnv, resolveNestedAsyncDir, resolveNestedParentAddressFromEnv, updateForegroundNestedProjection, writeNestedControlRequest, writeNestedEvent, type NestedRunResolutionScope } from "../shared/nested-events.ts";
-import { resolveSubagentRunId, type ResolvedSubagentRunId } from "../background/run-id-resolver.ts";
-import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
-import { inspectSubagentStatus } from "../background/run-status.ts";
-import { applyForceTopLevelAsyncOverride } from "../background/top-level-async.ts";
 import {
 	cleanupWorktrees,
-	createWorktrees,
-	diffWorktrees,
-	findWorktreeTaskCwdConflict,
-	formatWorktreeDiffSummary,
-	formatWorktreeTaskCwdConflict,
-	type WorktreeSetup,
 } from "../shared/worktree.ts";
 import {
 	type AgentProgress,
-	type AcceptanceInput,
-	type ArtifactConfig,
 	type ArtifactPaths,
-	type ControlConfig,
-	type ControlEvent,
 	type Details,
-	type ExtensionConfig,
-	type IntercomEventBus,
-	type MaxOutputConfig,
-	type NestedRouteInfo,
-	type NestedRunSummary,
-	type ResolvedControlConfig,
 	type SingleResult,
-	type SubagentRunMode,
-	type SubagentState,
-	DEFAULT_ARTIFACT_CONFIG,
-	SUBAGENT_ACTIONS,
-	SUBAGENT_CONTROL_EVENT,
-	SUBAGENT_CONTROL_INTERCOM_EVENT,
-	checkSubagentDepth,
 	resolveTopLevelParallelConcurrency,
 	resolveTopLevelParallelMaxTasks,
 	resolveChildMaxSubagentDepth,
@@ -133,53 +52,28 @@ import {
 	wrapForkTask,
 } from "../../shared/types.ts";
 import {
-	validateExecutionInput,
-	getRequestedModeLabel,
-	applyAgentDefaultContext,
-	buildRequestedModeError,
-	expandTopLevelTaskCounts,
-	expandChainParallelCounts,
-	normalizeRepeatedParallelCounts,
-	withForkContext,
-	toExecutionErrorResult,
-	collectChainSessionFiles,
-	wrapChainTasksForFork,
 	buildParallelModeError,
 	resolveParallelTaskCwd,
 	findDuplicateParallelOutputPath,
 	createParallelWorktreeSetup,
 	buildParallelWorktreeTaskCwdError,
-	buildChainWorktreeTaskCwdError,
 	mergeWorktreeResults,
 	buildParallelWorktreeSuffix,
 } from "./foreground-validation.ts";
-import { runAsyncPath } from "./run-async.ts";
 
 // Helpers extracted to executor-helpers.ts
 import {
 	createForegroundControlNotifier,
-	foregroundStatusResult,
-	getForegroundControl,
-	interruptAsyncRun,
-	interruptNestedRun,
 	maybeBuildForegroundIntercomReceipt,
-	nestedResolutionScopeForExecutor,
 	rememberForegroundRun,
-	resolveRequestedCwd,
-	resumeAsyncRun,
 } from "./executor-helpers.ts";
 
 // Chain/parallel path runners extracted to executor-paths.ts
 import {
-	runChainPath,
 	runForegroundParallelTasks,
 } from "./executor-paths.ts";
 
-
-
-
 // Shared constants from executor-helpers.ts
-import { ASYNC_INTERRUPT_SIGNAL, MUTATING_MANAGEMENT_ACTIONS } from "./executor-helpers.ts";
 
 
 export async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): Promise<AgentToolResult<Details>> {

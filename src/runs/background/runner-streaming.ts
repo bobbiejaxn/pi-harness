@@ -18,40 +18,12 @@ import { appendJsonl, getArtifactPaths } from "../../shared/artifacts.ts";
 import { PI_CODING_AGENT_PACKAGE, getPiSpawnCommand, resolveInstalledPiPackageRoot } from "../shared/pi-spawn.ts";
 import { captureSingleOutputSnapshot, finalizeSingleOutput, formatSavedOutputReference, resolveSingleOutput, type SingleOutputSnapshot } from "../shared/single-output.ts";
 import {
-	type ActivityState,
-	type ArtifactConfig,
 	type ArtifactPaths,
-	type AsyncParallelGroupStatus,
-	type AsyncStatus,
-	type ChainOutputMap,
 	type ModelAttempt,
-	type NestedRouteInfo,
-	type ResolvedControlConfig,
-	type SubagentRunMode,
-	type Usage,
-	type WorkflowGraphSnapshot,
-	DEFAULT_MAX_OUTPUT,
-	type MaxOutputConfig,
-	truncateOutput,
 	getSubagentDepthEnv,
 } from "../../shared/types.ts";
 import {
-	DEFAULT_CONTROL_CONFIG,
-	buildControlEvent,
-	deriveActivityState,
-	claimControlNotification,
-	formatControlIntercomMessage,
-	formatControlNoticeMessage,
-} from "../shared/subagent-control.ts";
-import {
 	type RunnerSubagentStep as SubagentStep,
-	type RunnerStep,
-	isDynamicRunnerGroup,
-	isParallelGroup,
-	flattenSteps,
-	mapConcurrent,
-	aggregateParallelOutputs,
-	MAX_PARALLEL_CONCURRENCY,
 } from "../shared/parallel-utils.ts";
 import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
 import { outputEntryFromAsyncResult, resolveOutputReferences } from "../shared/chain-outputs.ts";
@@ -63,96 +35,26 @@ import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit
 import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput } from "../../shared/utils.ts";
 import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
 import {
-	createMutatingFailureState,
-	didMutatingToolFail,
 	isMutatingTool,
-	nextLongRunningTrigger,
-	recordMutatingFailure,
-	resetMutatingFailureState,
-	resolveCurrentPath,
-	shouldEscalateMutatingFailures,
-	summarizeRecentMutatingFailures,
 } from "../shared/long-running-guard.ts";
 import { parseSessionTokens } from "../../shared/session-tokens.ts";
 import type { TokenUsage } from "../../shared/types.ts";
-import {
-	cleanupWorktrees,
-	createWorktrees,
-	diffWorktrees,
-	findWorktreeTaskCwdConflict,
-	formatWorktreeDiffSummary,
-	formatWorktreeTaskCwdConflict,
-	type WorktreeSetup,
-} from "../shared/worktree.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { writeInitialProgressFile } from "../../shared/settings.ts";
 import { resolveSubagentIntercomTarget } from "../../intercom/intercom-bridge.ts";
 import { acceptanceFailureMessage, aggregateAcceptanceReport, evaluateAcceptance, formatAcceptancePrompt, stripAcceptanceReport } from "../shared/acceptance.ts";
 
 interface SubagentRunConfig {
-	id: string;
-	steps: RunnerStep[];
-	resultPath: string;
-	cwd: string;
-	placeholder: string;
-	taskIndex?: number;
-	totalTasks?: number;
-	maxOutput?: MaxOutputConfig;
-	artifactsDir?: string;
-	artifactConfig?: Partial<ArtifactConfig>;
-	share?: boolean;
-	sessionDir?: string;
-	asyncDir: string;
-	sessionId?: string | null;
-	piPackageRoot?: string;
-	piArgv1?: string;
-	worktreeSetupHook?: string;
-	worktreeSetupHookTimeoutMs?: number;
-	controlConfig?: ResolvedControlConfig;
-	controlIntercomTarget?: string;
-	childIntercomTargets?: Array<string | undefined>;
-	resultMode?: SubagentRunMode;
-	dynamicFanoutMaxItems?: number;
-	workflowGraph?: WorkflowGraphSnapshot;
-	nestedRoute?: NestedRouteInfo;
-	nestedSelf?: { parentRunId: string; parentStepIndex?: number; depth: number; path?: Array<{ runId: string; stepIndex?: number; agent?: string }> };
 }
 
 interface StepResult {
-	agent: string;
-	output: string;
-	error?: string;
-	success: boolean;
-	exitCode?: number | null;
-	skipped?: boolean;
-	sessionFile?: string;
-	intercomTarget?: string;
-	model?: string;
-	attemptedModels?: string[];
-	modelAttempts?: ModelAttempt[];
-	artifactPaths?: ArtifactPaths;
-	truncated?: boolean;
-	structuredOutput?: unknown;
-	structuredOutputPath?: string;
-	structuredOutputSchemaPath?: string;
-	acceptance?: import("../../shared/types.ts").AcceptanceLedger;
 }
 
 const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
 
-
 // Utility helpers extracted to runner-utils.ts
 import {
-	findLatestSessionFile,
 	emptyUsage,
-	tokenUsageFromAttempts,
-	appendRecentStepOutput,
-	resetStepLiveDetail,
-	resolvePiPackageRootFallback,
-	exportSessionHtml,
-	createShareLink,
-	formatDuration,
-	writeRunLog,
 } from "./runner-utils.ts";
 
 export function runPiStreaming(
