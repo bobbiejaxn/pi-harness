@@ -10,6 +10,15 @@ import { captureSingleOutputSnapshot, finalizeSingleOutput, formatSavedOutputRef
 import {
 	type ActivityState,
 	type ChainOutputMap,
+	type MaxOutputConfig,
+	type ArtifactConfig,
+	type ResolvedControlConfig,
+	type SubagentRunMode,
+	type WorkflowGraphSnapshot,
+	type NestedRouteInfo,
+	type ModelAttempt,
+	type ArtifactPaths,
+	type AcceptanceLedger,
 	DEFAULT_MAX_OUTPUT,
 	truncateOutput,
 } from "../../shared/types.ts";
@@ -29,6 +38,7 @@ import {
 	mapConcurrent,
 	aggregateParallelOutputs,
 	MAX_PARALLEL_CONCURRENCY,
+	type RunnerStep,
 } from "../shared/parallel-utils.ts";
 import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
 import { outputEntryFromAsyncResult, resolveOutputReferences } from "../shared/chain-outputs.ts";
@@ -64,10 +74,53 @@ import { writeInitialProgressFile } from "../../shared/settings.ts";
 import { resolveSubagentIntercomTarget } from "../../intercom/intercom-bridge.ts";
 import { acceptanceFailureMessage, aggregateAcceptanceReport, evaluateAcceptance, formatAcceptancePrompt, stripAcceptanceReport } from "../shared/acceptance.ts";
 
-interface SubagentRunConfig {
+export interface SubagentRunConfig {
+	id: string;
+	steps: RunnerStep[];
+	resultPath: string;
+	cwd: string;
+	placeholder: string;
+	taskIndex?: number;
+	totalTasks?: number;
+	maxOutput?: MaxOutputConfig;
+	artifactsDir?: string;
+	artifactConfig?: Partial<ArtifactConfig>;
+	share?: boolean;
+	sessionDir?: string;
+	asyncDir: string;
+	sessionId?: string | null;
+	piPackageRoot?: string;
+	piArgv1?: string;
+	worktreeSetupHook?: string;
+	worktreeSetupHookTimeoutMs?: number;
+	controlConfig?: ResolvedControlConfig;
+	controlIntercomTarget?: string;
+	childIntercomTargets?: Array<string | undefined>;
+	resultMode?: SubagentRunMode;
+	dynamicFanoutMaxItems?: number;
+	workflowGraph?: WorkflowGraphSnapshot;
+	nestedRoute?: NestedRouteInfo;
+	nestedSelf?: { parentRunId: string; parentStepIndex?: number; depth: number; path?: Array<{ runId: string; stepIndex?: number; agent?: string }> };
 }
 
-interface StepResult {
+export interface StepResult {
+	agent: string;
+	output: string;
+	error?: string;
+	success: boolean;
+	exitCode?: number | null;
+	skipped?: boolean;
+	sessionFile?: string;
+	intercomTarget?: string;
+	model?: string;
+	attemptedModels?: string[];
+	modelAttempts?: ModelAttempt[];
+	artifactPaths?: ArtifactPaths;
+	truncated?: boolean;
+	structuredOutput?: unknown;
+	structuredOutputPath?: string;
+	structuredOutputSchemaPath?: string;
+	acceptance?: AcceptanceLedger;
 }
 
 const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";

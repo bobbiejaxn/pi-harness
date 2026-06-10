@@ -2,6 +2,17 @@
  * Type definitions for the subagent extension
  */
 
+import type {} from "@earendil-works/pi-agent-core";
+
+// Augment AgentToolResult with runtime-only properties
+// (isError is set at runtime but not in the package types)
+declare module "@earendil-works/pi-agent-core" {
+	// eslint-disable-next-line @typescript-eslint/no-empty-object-interface
+	interface AgentToolResult<T> {
+		isError?: boolean;
+	}
+}
+
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";

@@ -33,6 +33,8 @@ export interface AcceptanceVerifyCommand {
 	readonly timeoutMs?: number;
 	readonly expectExitCode?: number;
 	readonly captureOutput?: boolean;
+	readonly id?: string;
+	readonly allowFailure?: boolean;
 }
 
 export interface AcceptanceReviewGate {
@@ -53,6 +55,12 @@ export interface AcceptanceConfig {
 	readonly requireTests?: boolean;
 	readonly minTestsAdded?: number;
 	readonly skip?: boolean;
+	readonly verify?: AcceptanceVerifyCommand | AcceptanceVerifyCommand[];
+	readonly review?: AcceptanceReviewGate | AcceptanceReviewGate[];
+	readonly criteria?: string | string[];
+	readonly evidence?: AcceptanceEvidenceKind[];
+	readonly reason?: string;
+	readonly stopRules?: Array<{ condition: string; action: "fail" | "warn" }>;
 }
 
 export type AcceptanceInput = AcceptanceLevel | false | AcceptanceConfig;
@@ -61,6 +69,8 @@ export interface ResolvedAcceptanceGate extends AcceptanceGate {
 	readonly resolvedLevel: AcceptanceLevel;
 	readonly verifyCommand?: AcceptanceVerifyCommand;
 	readonly review?: AcceptanceReviewGate;
+	readonly id?: string;
+	readonly severity?: "info" | "warning" | "error" | "critical";
 }
 
 export interface ResolvedAcceptanceConfig {
@@ -74,6 +84,13 @@ export interface ResolvedAcceptanceConfig {
 	readonly minCoveragePercent: number;
 	readonly requireTests: boolean;
 	readonly minTestsAdded: number;
+	readonly verify?: AcceptanceVerifyCommand | AcceptanceVerifyCommand[];
+	readonly review?: AcceptanceReviewGate | AcceptanceReviewGate[];
+	readonly criteria?: string | string[];
+	readonly evidence?: AcceptanceEvidenceKind[];
+	readonly stopRules?: Array<{ condition: string; action: "fail" | "warn" }>;
+	readonly explicit?: boolean;
+	readonly inferredReason?: string;
 }
 
 export interface AcceptanceReport {
@@ -90,6 +107,18 @@ export interface AcceptanceReport {
 	readonly error?: string;
 	readonly skipped?: boolean;
 	readonly skipReason?: string;
+	readonly criteriaSatisfied?: boolean;
+	readonly changedFiles?: string[];
+	readonly commandsRun?: string[];
+	readonly testsAddedOrUpdated?: string[];
+	readonly validationOutput?: string;
+	readonly diffSummary?: string;
+	readonly reviewFindings?: string[];
+	readonly residualRisks?: string[];
+	readonly notes?: string;
+	readonly manualNotes?: string;
+	readonly noStagedFiles?: boolean;
+	readonly gates?: AcceptanceGate[];
 }
 
 export type AcceptanceRuntimeCheckStatus = "passed" | "failed" | "not-applicable";
@@ -114,6 +143,7 @@ export interface AcceptanceReviewResult {
 	readonly reviewer?: string;
 	readonly reason?: string;
 	readonly timestamp: number;
+	readonly status?: "approved" | "rejected" | "pending";
 }
 
 export type AcceptanceLedgerStatus =
@@ -135,6 +165,12 @@ export interface AcceptanceLedger {
 		readonly waivedAt?: number;
 		readonly waivedReason?: string;
 	}>;
+	readonly status?: AcceptanceLedgerStatus;
+	readonly verifyRuns?: AcceptanceVerifyResult[];
+	readonly runtimeChecks?: AcceptanceRuntimeCheck[];
+	readonly reviewResult?: AcceptanceReviewResult;
+	readonly childReport?: AcceptanceReport;
+	readonly childReportParseError?: string;
 	readonly overallStatus: AcceptanceLedgerStatus;
 	readonly startedAt: number;
 	readonly completedAt?: number;
