@@ -31,6 +31,7 @@ import * as path from "node:path";
 
 /** Env vars propagated to child processes for trace context. */
 export interface TraceEnv {
+	[key: string]: string | undefined;
 	/** Shared run ID across all nested children. */
 	PI_TRACE_RUN_ID?: string;
 	/** Name of the agent that spawned this process. */

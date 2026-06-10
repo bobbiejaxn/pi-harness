@@ -107,6 +107,7 @@ type ChildMessage = Message & {
 };
 
 export interface ChildEvent {
+	[key: string]: unknown;
 	type?: string;
 	message?: ChildMessage;
 	toolName?: string;

@@ -134,7 +134,7 @@ export interface ExecutionContextData {
 }
 
 export type AsyncResumeSourceTarget = ReturnType<typeof import("../background/async-resume.ts").resolveAsyncResumeTarget> & { source: "async" };
-export type ForegroundResumeSourceTarget = NonNullable<ReturnType<typeof import("./subagent-executor.ts").resolveForegroundResumeTarget>> & { kind: "revive"; source: "foreground" };
+export type ForegroundResumeSourceTarget = NonNullable<ReturnType<typeof import("./executor-helpers.ts").resolveForegroundResumeTarget>> & { kind: "revive"; source: "foreground" };
 export type NestedResumeSourceTarget = {
 	kind: "revive";
 	source: "nested";

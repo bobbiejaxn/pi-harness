@@ -13,6 +13,15 @@ declare module "@earendil-works/pi-agent-core" {
 	}
 }
 
+declare module "@earendil-works/pi-coding-agent" {
+	interface ExtensionUIContext {
+		requestRender?: () => void;
+	}
+	interface ExtensionAPI {
+		model?: string;
+	}
+}
+
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
@@ -183,6 +192,7 @@ export interface SubagentResultIntercomChild {
 }
 
 export interface SubagentResultIntercomPayload {
+	[key: string]: unknown;
 	to: string;
 	message: string;
 	requestId?: string;
