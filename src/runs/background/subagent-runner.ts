@@ -1,8 +1,6 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { pathToFileURL } from "node:url";
-import type { Message } from "@earendil-works/pi-ai";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { appendJsonl, getArtifactPaths } from "../../shared/artifacts.ts";
 import { PI_CODING_AGENT_PACKAGE, getPiSpawnCommand, resolveInstalledPiPackageRoot } from "../shared/pi-spawn.ts";
@@ -142,6 +140,7 @@ import type { ChildEvent } from "./runner-utils.ts";
 import {
 	runSingleStep,
 } from "./runner-streaming.ts";
+import { finalizeRun } from "./runner-finalize.ts";
 
 export type RunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
 };
@@ -1322,152 +1321,30 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 		}
 	}
 
-	let summary = results.map((r) => `${r.agent}:\n${r.output}`).join("\n\n");
-	let truncated = false;
-
-	if (maxOutput) {
-		const config = { ...DEFAULT_MAX_OUTPUT, ...maxOutput };
-		const lastArtifactPath = results[results.length - 1]?.artifactPaths?.outputPath;
-		const truncResult = truncateOutput(summary, config, lastArtifactPath);
-		if (truncResult.truncated) {
-			summary = truncResult.text;
-			truncated = true;
-		}
-	}
-
-	const resultMode = config.resultMode ?? statusPayload.mode;
-	const agentName = flatSteps.length === 1
-		? flatSteps[0].agent
-		: resultMode === "parallel"
-			? `parallel:${flatSteps.map((s) => s.agent).join("+")}`
-			: `chain:${flatSteps.map((s) => s.agent).join("->")}`;
-	let sessionFile: string | undefined;
-	let shareUrl: string | undefined;
-	let gistUrl: string | undefined;
-	let shareError: string | undefined;
-
-	if (shareEnabled) {
-		sessionFile = config.sessionDir
-			? (findLatestSessionFile(config.sessionDir) ?? undefined)
-			: undefined;
-		if (!sessionFile && latestSessionFile) {
-			sessionFile = latestSessionFile;
-		}
-		if (sessionFile) {
-			try {
-				const exportDir = config.sessionDir ?? path.dirname(sessionFile);
-				const htmlPath = await exportSessionHtml(sessionFile, exportDir, config.piPackageRoot);
-				const share = createShareLink(htmlPath);
-				if ("error" in share) shareError = share.error;
-				else {
-					shareUrl = share.shareUrl;
-					gistUrl = share.gistUrl;
-				}
-			} catch (err) {
-				shareError = String(err);
-			}
-		} else {
-			shareError = "Session file not found.";
-		}
-	}
-
-	if (activityTimer) {
-		clearInterval(activityTimer);
-		activityTimer = undefined;
-	}
-	const effectiveSessionFile = sessionFile ?? latestSessionFile;
-	const runEndedAt = Date.now();
-	statusPayload.state = interrupted ? "paused" : results.every((r) => r.success) ? "complete" : "failed";
-	statusPayload.activityState = undefined;
-	statusPayload.endedAt = runEndedAt;
-	statusPayload.lastUpdate = runEndedAt;
-	statusPayload.sessionFile = effectiveSessionFile;
-	statusPayload.shareUrl = shareUrl;
-	statusPayload.gistUrl = gistUrl;
-	statusPayload.shareError = shareError;
-	if (statusPayload.state === "failed" && !statusPayload.error) {
-		const failedStep = statusPayload.steps.find((s) => s.status === "failed");
-		if (failedStep?.agent) {
-			statusPayload.error = `Step failed: ${failedStep.agent}`;
-		}
-	}
-	writeStatusPayload();
-	appendJsonl(
-		eventsPath,
-		JSON.stringify({
-			type: "subagent.run.completed",
-			ts: runEndedAt,
-			runId: id,
-			status: statusPayload.state,
-			durationMs: runEndedAt - overallStartTime,
-		}),
-	);
-	writeRunLog(logPath, {
+	// ── Post-completion: finalize output, sharing, result file ──
+	await finalizeRun({
+		results,
+		maxOutput,
+		config,
+		statusPayload,
+		flatSteps,
+		shareEnabled,
+		latestSessionFile,
+		activityTimer,
+		interrupted,
 		id,
-		mode: statusPayload.mode,
+		overallStartTime,
+		eventsPath,
+		logPath,
 		cwd,
-		startedAt: overallStartTime,
-		endedAt: runEndedAt,
-		steps: statusPayload.steps.map((step) => ({
-			agent: step.agent,
-			status: step.status,
-			durationMs: step.durationMs,
-		})),
-		summary,
-		truncated,
 		artifactsDir,
-		sessionFile: effectiveSessionFile,
-		shareUrl,
-		shareError,
+		asyncDir,
+		resultPath,
+		outputs,
+		taskIndex,
+		totalTasks,
+		writeStatusPayload,
 	});
-
-	try {
-		writeAtomicJson(resultPath, {
-			id,
-			agent: agentName,
-			mode: resultMode,
-			success: !interrupted && results.every((r) => r.success),
-			state: interrupted ? "paused" : results.every((r) => r.success) ? "complete" : "failed",
-			summary: interrupted ? "Paused after interrupt. Waiting for explicit next action." : summary,
-			results: results.map((r) => ({
-				agent: r.agent,
-				output: r.output,
-				error: r.error,
-				success: r.success,
-				skipped: r.skipped || undefined,
-				sessionFile: r.sessionFile,
-				intercomTarget: r.intercomTarget,
-				model: r.model,
-				attemptedModels: r.attemptedModels,
-				modelAttempts: r.modelAttempts,
-				artifactPaths: r.artifactPaths,
-				truncated: r.truncated,
-				structuredOutput: r.structuredOutput,
-				structuredOutputPath: r.structuredOutputPath,
-				structuredOutputSchemaPath: r.structuredOutputSchemaPath,
-				acceptance: r.acceptance,
-			})),
-			outputs,
-			workflowGraph: statusPayload.workflowGraph,
-			exitCode: interrupted || results.every((r) => r.success) ? 0 : 1,
-			timestamp: runEndedAt,
-			durationMs: runEndedAt - overallStartTime,
-			truncated,
-			artifactsDir,
-			cwd,
-			asyncDir,
-			sessionId: config.sessionId,
-			sessionFile: effectiveSessionFile,
-			intercomTarget: config.controlIntercomTarget,
-			shareUrl,
-			gistUrl,
-			shareError,
-			...(taskIndex !== undefined && { taskIndex }),
-			...(totalTasks !== undefined && { totalTasks }),
-		});
-	} catch (err) {
-		console.error(`Failed to write result file ${resultPath}:`, err);
-	}
 }
 
 const configArg = process.argv[2];
