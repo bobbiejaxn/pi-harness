@@ -25,135 +25,143 @@ export type AcceptanceEvidenceKind =
 	| "manual-notes";
 
 export interface AcceptanceGate {
-	readonly level: AcceptanceLevel;
-	readonly description?: string;
-	readonly verifyCommand?: AcceptanceVerifyCommand;
-	readonly review?: AcceptanceReviewGate;
-	readonly autoCheck?: AcceptanceRuntimeCheck[];
+	level: AcceptanceLevel;
+	description?: string;
+	verifyCommand?: AcceptanceVerifyCommand;
+	review?: AcceptanceReviewGate;
+	autoCheck?: AcceptanceRuntimeCheck[];
 }
 
 export interface AcceptanceVerifyCommand {
-	readonly command: string;
-	readonly args?: string[];
-	readonly cwd?: string;
-	readonly env?: Record<string, string>;
-	readonly timeoutMs?: number;
-	readonly expectExitCode?: number;
-	readonly captureOutput?: boolean;
-	readonly id?: string;
-	readonly allowFailure?: boolean;
+	command: string;
+	args?: string[];
+	cwd?: string;
+	env?: Record<string, string>;
+	timeoutMs?: number;
+	expectExitCode?: number;
+	captureOutput?: boolean;
+	id?: string;
+	allowFailure?: boolean;
 }
 
 export interface AcceptanceReviewGate {
-	readonly requireHuman?: boolean;
-	readonly requireApproval?: boolean;
-	readonly timeoutMs?: number;
+	requireHuman?: boolean;
+	requireApproval?: boolean;
+	timeoutMs?: number;
+	agent?: string;
+	required?: boolean;
+	focus?: string | string[];
 }
 
 export interface AcceptanceConfig {
-	readonly level?: AcceptanceLevel;
-	readonly gates?: AcceptanceGate[];
-	readonly autoFailOnTestFailure?: boolean;
-	readonly autoFailOnLintError?: boolean;
-	readonly autoFailOnTypeError?: boolean;
-	readonly autoFailOnBuildError?: boolean;
-	readonly requireCoverage?: boolean;
-	readonly minCoveragePercent?: number;
-	readonly requireTests?: boolean;
-	readonly minTestsAdded?: number;
-	readonly skip?: boolean;
-	readonly verify?: AcceptanceVerifyCommand | AcceptanceVerifyCommand[];
-	readonly review?: AcceptanceReviewGate | AcceptanceReviewGate[];
-	readonly criteria?: string | string[];
-	readonly evidence?: AcceptanceEvidenceKind[];
-	readonly reason?: string;
-	readonly stopRules?: Array<{ condition: string; action: "fail" | "warn" }>;
+	level?: AcceptanceLevel;
+	gates?: AcceptanceGate[];
+	autoFailOnTestFailure?: boolean;
+	autoFailOnLintError?: boolean;
+	autoFailOnTypeError?: boolean;
+	autoFailOnBuildError?: boolean;
+	requireCoverage?: boolean;
+	minCoveragePercent?: number;
+	requireTests?: boolean;
+	minTestsAdded?: number;
+	skip?: boolean;
+	verify?: AcceptanceVerifyCommand[];
+	review?: AcceptanceReviewGate;
+	criteria?: string[];
+	evidence?: AcceptanceEvidenceKind[];
+	reason?: string;
+	stopRules?: Array<{ condition: string; action: "fail" | "warn" }>;
 }
 
 export type AcceptanceInput = AcceptanceLevel | false | AcceptanceConfig;
 
 export interface ResolvedAcceptanceGate extends AcceptanceGate {
-	readonly resolvedLevel: AcceptanceLevel;
-	readonly verifyCommand?: AcceptanceVerifyCommand;
-	readonly review?: AcceptanceReviewGate;
-	readonly id?: string;
-	readonly severity?: "info" | "warning" | "error" | "critical";
+	resolvedLevel: AcceptanceLevel;
+	verifyCommand?: AcceptanceVerifyCommand;
+	review?: AcceptanceReviewGate | AcceptanceReviewGate[] | { agent?: string; required?: boolean };
+	id?: string;
+	severity?: string;
+	must?: string;
+	evidence?: AcceptanceEvidenceKind[];
 }
 
 export interface ResolvedAcceptanceConfig {
-	readonly level: AcceptanceLevel;
-	readonly gates: ResolvedAcceptanceGate[];
-	readonly autoFailOnTestFailure: boolean;
-	readonly autoFailOnLintError: boolean;
-	readonly autoFailOnTypeError: boolean;
-	readonly autoFailOnBuildError: boolean;
-	readonly requireCoverage: boolean;
-	readonly minCoveragePercent: number;
-	readonly requireTests: boolean;
-	readonly minTestsAdded: number;
-	readonly verify?: AcceptanceVerifyCommand | AcceptanceVerifyCommand[];
-	readonly review?: AcceptanceReviewGate | AcceptanceReviewGate[];
-	readonly criteria?: string | string[];
-	readonly evidence?: AcceptanceEvidenceKind[];
-	readonly stopRules?: Array<{ condition: string; action: "fail" | "warn" }>;
-	readonly explicit?: boolean;
-	readonly inferredReason?: string;
+	level: AcceptanceLevel;
+	gates: ResolvedAcceptanceGate[];
+	autoFailOnTestFailure: boolean;
+	autoFailOnLintError: boolean;
+	autoFailOnTypeError: boolean;
+	autoFailOnBuildError: boolean;
+	requireCoverage: boolean;
+	minCoveragePercent: number;
+	requireTests: boolean;
+	minTestsAdded: number;
+	verify?: AcceptanceVerifyCommand[];
+	review?: AcceptanceReviewGate;
+	criteria?: string[];
+	evidence?: AcceptanceEvidenceKind[];
+	stopRules?: Array<{ condition: string; action: "fail" | "warn" }>;
+	explicit?: boolean;
+	inferredReason?: string;
 }
 
 export interface AcceptanceReport {
-	readonly gateId: string;
-	readonly gateLevel: AcceptanceLevel;
-	readonly passed: boolean;
-	readonly evidence: Array<{
-		readonly kind: AcceptanceEvidenceKind;
-		readonly value: string | number | boolean;
-		readonly timestamp: number;
+	gateId: string;
+	gateLevel: AcceptanceLevel;
+	passed: boolean;
+	evidence: Array<{
+		kind: AcceptanceEvidenceKind;
+		value: string | number | boolean;
+		timestamp: number;
 	}>;
-	readonly startedAt: number;
-	readonly completedAt: number;
-	readonly error?: string;
-	readonly skipped?: boolean;
-	readonly skipReason?: string;
-	readonly criteriaSatisfied?: boolean;
-	readonly changedFiles?: string[];
-	readonly commandsRun?: string[];
-	readonly testsAddedOrUpdated?: string[];
-	readonly validationOutput?: string;
-	readonly diffSummary?: string;
-	readonly reviewFindings?: string[];
-	readonly residualRisks?: string[];
-	readonly notes?: string;
-	readonly manualNotes?: string;
-	readonly noStagedFiles?: boolean;
-	readonly gates?: AcceptanceGate[];
+	startedAt: number;
+	completedAt: number;
+	error?: string;
+	skipped?: boolean;
+	skipReason?: string;
+	criteriaSatisfied?: boolean;
+	changedFiles?: string[];
+	commandsRun?: string[];
+	testsAddedOrUpdated?: string[];
+	validationOutput?: string;
+	diffSummary?: string;
+	reviewFindings?: string[];
+	residualRisks?: string[];
+	notes?: string;
+	manualNotes?: string;
+	noStagedFiles?: boolean;
+	gates?: AcceptanceGate[];
 }
 
 export type AcceptanceRuntimeCheckStatus = "passed" | "failed" | "not-applicable";
 
 export interface AcceptanceRuntimeCheck {
-	readonly id: string;
-	readonly description: string;
-	readonly status?: string;
-	readonly evidence?: string;
-	readonly check(): Promise<AcceptanceRuntimeCheckStatus> | AcceptanceRuntimeCheckStatus;
+	id: string;
+	description: string;
+	status?: string;
+	evidence?: string;
+	message?: string;
+	check(): Promise<AcceptanceRuntimeCheckStatus> | AcceptanceRuntimeCheckStatus;
 }
 
 export interface AcceptanceVerifyResult {
-	readonly id?: string;
-	readonly exitCode: number | null;
-	readonly stdout: string;
-	readonly stderr: string;
-	readonly timedOut: boolean;
-	readonly passed: boolean;
-	readonly error?: string;
+	id?: string;
+	status?: string;
+	exitCode: number | null;
+	stdout: string;
+	stderr: string;
+	timedOut: boolean;
+	passed: boolean;
+	error?: string;
 }
 
 export interface AcceptanceReviewResult {
-	readonly approved: boolean;
-	readonly reviewer?: string;
-	readonly reason?: string;
-	readonly timestamp: number;
-	readonly status?: "approved" | "rejected" | "pending";
+	approved: boolean;
+	reviewer?: string;
+	reason?: string;
+	timestamp: number;
+	findings?: string[];
+	status?: "approved" | "rejected" | "pending" | "no-blockers" | "needs-parent-decision" | "blockers";
 }
 
 export type AcceptanceLedgerStatus =
@@ -163,28 +171,36 @@ export type AcceptanceLedgerStatus =
 	| "failed"
 	| "skipped"
 	| "waived"
-	| "rejected";
+	| "rejected"
+	| "not-required"
+	| "claimed"
+	| "attested"
+	| "checked"
+	| "verified"
+	| "reviewed";
 
 export interface AcceptanceLedger {
-	readonly gates: Array<{
-		readonly gateId: string;
-		readonly level: AcceptanceLevel;
-		readonly status: AcceptanceLedgerStatus;
-		readonly report?: AcceptanceReport;
-		readonly reviewResult?: AcceptanceReviewResult;
-		readonly verifyResult?: AcceptanceVerifyResult;
-		readonly waivedAt?: number;
-		readonly waivedReason?: string;
+	gates: Array<{
+		gateId: string;
+		level: AcceptanceLevel;
+		status: AcceptanceLedgerStatus;
+		report?: AcceptanceReport;
+		reviewResult?: AcceptanceReviewResult;
+		verifyResult?: AcceptanceVerifyResult;
+		waivedAt?: number;
+		waivedReason?: string;
 	}>;
-	readonly status?: AcceptanceLedgerStatus;
-	readonly verifyRuns?: AcceptanceVerifyResult[];
-	readonly runtimeChecks?: AcceptanceRuntimeCheck[];
-	readonly reviewResult?: AcceptanceReviewResult;
-	readonly childReport?: AcceptanceReport;
-	readonly childReportParseError?: string;
-	readonly overallStatus: AcceptanceLedgerStatus;
-	readonly startedAt: number;
-	readonly completedAt?: number;
-	readonly summary?: string;
-	readonly reason?: string;
+	status?: AcceptanceLedgerStatus;
+	verifyRuns?: AcceptanceVerifyResult[];
+	runtimeChecks?: AcceptanceRuntimeCheck[];
+	reviewResult?: AcceptanceReviewResult;
+	childReport?: AcceptanceReport;
+	childReportParseError?: string;
+	explicit?: boolean;
+	effectiveAcceptance?: string;
+	overallStatus: AcceptanceLedgerStatus;
+	startedAt: number;
+	completedAt?: number;
+	summary?: string;
+	reason?: string;
 };
