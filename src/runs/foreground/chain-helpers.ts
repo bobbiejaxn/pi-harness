@@ -67,7 +67,7 @@ import { createStructuredOutputRuntime } from "../shared/structured-output.ts";
 import type { ChainOutputMap } from "../../shared/types.ts";
 
 
-interface ChainExecutionDetailsInput {
+export interface ChainExecutionDetailsInput {
 	results: SingleResult[];
 	includeProgress?: boolean;
 	allProgress: AgentProgress[];
@@ -394,7 +394,7 @@ interface ChainExecutionParams {
 	worktreeSetupHookTimeoutMs?: number;
 }
 
-interface ChainExecutionResult {
+export interface ChainExecutionResult {
 	content: Array<{ type: "text"; text: string }>;
 	details: Details;
 	isError?: boolean;

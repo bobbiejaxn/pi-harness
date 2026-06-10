@@ -146,7 +146,7 @@ function widgetOutputPath(job: AsyncJobState, step: NonNullable<AsyncJobState["s
 }
 
 
-function foregroundStyleWidgetStepLines(
+export function foregroundStyleWidgetStepLines(
 	job: AsyncJobState,
 	theme: Theme,
 	step: NonNullable<AsyncJobState["steps"]>[number],

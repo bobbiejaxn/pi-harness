@@ -66,14 +66,14 @@ const parseInlineConfig = (raw: string): InlineConfig => {
 	return config;
 };
 
-const parseAgentToken = (token: string): { name: string; config: InlineConfig } => {
+export const parseAgentToken = (token: string): { name: string; config: InlineConfig } => {
 	const bracket = token.indexOf("[");
 	if (bracket === -1) return { name: token, config: {} };
 	const end = token.lastIndexOf("]");
 	return { name: token.slice(0, bracket), config: parseInlineConfig(token.slice(bracket + 1, end !== -1 ? end : undefined)) };
 };
 
-const extractExecutionFlags = (rawArgs: string): { args: string; bg: boolean; fork: boolean } => {
+export const extractExecutionFlags = (rawArgs: string): { args: string; bg: boolean; fork: boolean } => {
 	let args = rawArgs.trim();
 	let bg = false;
 	let fork = false;
@@ -117,7 +117,7 @@ export const makeAgentCompletions = (state: SubagentState, multiAgent: boolean) 
 	return agents.filter((a) => a.name.startsWith(lastWord)).map((a) => ({ value: `${beforeLastWord}${a.name}`, label: a.name }));
 };
 
-const discoverSavedChains = (cwd: string): ChainConfig[] => {
+export const discoverSavedChains = (cwd: string): ChainConfig[] => {
 	const chainsByName = new Map<string, ChainConfig>();
 	for (const chain of discoverAgentsAll(cwd).chains) {
 		chainsByName.set(chain.name, chain);
@@ -147,7 +147,7 @@ export function loadSavedOutputSchema(chain: ChainConfig, stepAgent: string, out
 	return outputSchema;
 }
 
-const mapSavedChainSteps = (chain: ChainConfig, worktree = false): ChainStep[] => {
+export const mapSavedChainSteps = (chain: ChainConfig, worktree = false): ChainStep[] => {
 	return (chain.steps as unknown as Array<ChainStep & { skills?: string[] | false }>).map((step) => {
 		if (isParallelStep(step)) {
 			const parallel = step.parallel.map((task) => {
@@ -315,7 +315,7 @@ export function persistSlashSessionSnapshot(ctx: ExtensionContext): void {
 	}
 }
 
-async function runSlashSubagent(
+export async function runSlashSubagent(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	params: SubagentParamsLike,
@@ -372,7 +372,7 @@ async function runSlashSubagent(
 
 interface ParsedStep { name: string; config: InlineConfig; task?: string }
 
-const parseAgentArgs = (
+export const parseAgentArgs = (
 	state: SubagentState,
 	args: string,
 	command: string,

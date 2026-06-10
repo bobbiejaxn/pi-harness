@@ -28,10 +28,10 @@ import { join, dirname } from "node:path";
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CHILD_DOMAIN_GUARD_PATH = join(__dirname, "child-domain-guard.ts");
+export const CHILD_DOMAIN_GUARD_PATH = join(__dirname, "child-domain-guard.ts");
 
-const artifactOutputByResult = new WeakMap<SingleResult, string>();
-const acceptanceOutputByResult = new WeakMap<SingleResult, string>();
+export const artifactOutputByResult = new WeakMap<SingleResult, string>();
+export const acceptanceOutputByResult = new WeakMap<SingleResult, string>();
 
 
 export function emptyUsage(): Usage {

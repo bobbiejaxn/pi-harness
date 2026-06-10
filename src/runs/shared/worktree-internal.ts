@@ -15,7 +15,7 @@ export interface WorktreeSetup {
 	baseCommit: string;
 }
 
-interface WorktreeInfo {
+export interface WorktreeInfo {
 	path: string;
 	agentCwd: string;
 	branch: string;
@@ -51,7 +51,7 @@ interface CreateWorktreesOptions {
 	setupHook?: WorktreeSetupHookConfig;
 }
 
-interface ResolvedWorktreeSetupHook {
+export interface ResolvedWorktreeSetupHook {
 	hookPath: string;
 	timeoutMs: number;
 }

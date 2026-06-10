@@ -28,6 +28,7 @@ import {
 	getSubagentDepthEnv,
 } from "../../shared/types.ts";
 import type { TokenUsage } from "../../shared/types.ts";
+import type { RunnerStatusStep } from "./subagent-runner.ts";
 
 
 
@@ -82,7 +83,7 @@ export function resetStepLiveDetail(step: RunnerStatusStep): void {
 	step.recentOutput = [];
 }
 
-interface ChildEventContext {
+export interface ChildEventContext {
 	eventsPath: string;
 	runId: string;
 	stepIndex: number;
@@ -112,7 +113,7 @@ interface ChildEvent {
 	args?: Record<string, unknown>;
 }
 
-interface RunPiStreamingResult {
+export interface RunPiStreamingResult {
 	stderr: string;
 	exitCode: number | null;
 	messages: Message[];
@@ -231,7 +232,7 @@ export function writeRunLog(
 }
 
 /** Context for running a single step */
-interface SingleStepContext {
+export interface SingleStepContext {
 	previousOutput: string;
 	outputs?: ChainOutputMap;
 	placeholder: string;

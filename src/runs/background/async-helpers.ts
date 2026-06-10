@@ -105,7 +105,7 @@ interface AsyncExecutionContext {
 	currentModelProvider?: string;
 }
 
-interface AsyncChainParams {
+export interface AsyncChainParams {
 	chain: ChainStep[];
 	task?: string;
 	resultMode?: Exclude<SubagentRunMode, "single">;
@@ -131,7 +131,7 @@ interface AsyncChainParams {
 	acceptance?: AcceptanceInput;
 }
 
-interface AsyncSingleParams {
+export interface AsyncSingleParams {
 	agent: string;
 	task?: string;
 	agentConfig: AgentConfig;
@@ -228,10 +228,10 @@ export function formatAsyncStartError(mode: SubagentRunMode, message: string): A
 	};
 }
 
-const UNAVAILABLE_SUBAGENT_SKILL_ERROR = "Skills not found: pi-subagents";
+export const UNAVAILABLE_SUBAGENT_SKILL_ERROR = "Skills not found: pi-subagents";
 
-class UnavailableSubagentSkillError extends Error {}
-class AsyncStartValidationError extends Error {}
+export class UnavailableSubagentSkillError extends Error {}
+export class AsyncStartValidationError extends Error {}
 
 /**
  * Execute a chain asynchronously
