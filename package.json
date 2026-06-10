@@ -39,6 +39,9 @@
     },
     "./agents": {
       "import": "./agents.ts"
+    },
+    "./agents.js": {
+      "import": "./agents.ts"
     }
   },
   "files": [
