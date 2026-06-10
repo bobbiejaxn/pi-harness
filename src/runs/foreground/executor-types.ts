@@ -179,4 +179,6 @@ export interface ForegroundParallelRunInput {
 	liveProgress: (AgentProgress | undefined)[];
 	onUpdate?: (r: AgentToolResult<Details>) => void;
 	worktreeSetup?: WorktreeSetup;
+	circuitBreaker?: import("../../shared/circuit-breaker.ts").CircuitBreaker;
+	sessionLearner?: import("../../shared/session-learner.ts").SessionLearner;
 }

@@ -2,7 +2,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
 import type { SlashSubagentResponse, SlashSubagentUpdate } from "./slash-bridge.ts";
-import { type Details, type SingleResult, type Usage, SLASH_RESULT_TYPE } from "../shared/types.ts";
+import { type Details, type SingleResult, type Usage, type AgentProgress, SLASH_RESULT_TYPE } from "../shared/types.ts";
 
 export interface SlashMessageDetails {
 	requestId: string;
@@ -59,7 +59,6 @@ function createPlaceholderResult(
 		exitCode: 0,
 		messages: EMPTY_MESSAGES,
 		usage: cloneUsage(),
-// @ts-expect-error — type mismatch with runtime behavior
 		progress: {
 			...(index !== undefined ? { index } : {}),
 			agent,
@@ -70,7 +69,7 @@ function createPlaceholderResult(
 			toolCount: 0,
 			tokens: 0,
 			durationMs: 0,
-		},
+		} as AgentProgress,
 	};
 }
 
@@ -164,7 +163,6 @@ function buildSingleInitialResult(params: SubagentParamsLike): AgentToolResult<D
 			mode: "single",
 			...(params.context ? { context: params.context } : {}),
 			results: [createPlaceholderResult(agent, task, "running")],
-// @ts-expect-error — type mismatch with runtime behavior
 			progress: [{
 				agent,
 				status: "running",
@@ -174,7 +172,7 @@ function buildSingleInitialResult(params: SubagentParamsLike): AgentToolResult<D
 				toolCount: 0,
 				tokens: 0,
 				durationMs: 0,
-			}],
+			} as AgentProgress],
 		},
 	};
 }

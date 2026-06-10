@@ -13,7 +13,7 @@ import { flatToLogicalStepIndex, normalizeParallelGroups } from "./parallel-grou
 import { reconcileAsyncRun, reconcileNestedAsyncDescendants } from "./stale-run-reconciler.ts";
 import { attachRootChildrenToSteps, findNestedRouteForRootId, projectNestedRegistryForRoot, type NestedRunResolutionScope } from "../shared/nested-events.ts";
 
-interface RunStatusParams {
+export interface RunStatusParams {
 	action?: "status";
 	id?: string;
 	runId?: string;

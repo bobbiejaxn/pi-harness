@@ -73,8 +73,7 @@ export async function runChainPath(data: ExecutionContextData, deps: ExecutorDep
 	const foregroundControl = deps.state.foregroundControls.get(runId);
 	const normalized = normalizeSkillInput(params.skill);
 	const chainSkills = normalized === false ? [] : (normalized ?? []);
-// @ts-expect-error — type mismatch with runtime behavior
-	const chain = wrapChainTasksForFork(params.chain as ChainStep[], params.context);
+	const chain = wrapChainTasksForFork(params.chain as ChainStep[], params.context, (t) => t);
 	const currentMaxSubagentDepth = resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth);
 	const chainResult = await executeChain({
 		chain,
@@ -122,8 +121,7 @@ export async function runChainPath(data: ExecutionContextData, deps: ExecutorDep
 			currentSessionId: deps.state.currentSessionId!,
 			currentModelProvider: ctx.model?.provider,
 		};
-// @ts-expect-error — type mismatch with runtime behavior
-		const asyncChain = wrapChainTasksForFork(chainResult.requestedAsync.chain, params.context);
+		const asyncChain = wrapChainTasksForFork(chainResult.requestedAsync.chain, params.context, (t) => t);
 		return executeAsyncChain(id, {
 			chain: asyncChain,
 			task: params.task,
@@ -209,12 +207,10 @@ export async function runForegroundParallelTasks(input: ForegroundParallelRunInp
 		const agentConfig = input.agents.find((agent) => agent.name === task.agent);
 
 		// Session learner: get hint for this agent/task
-// @ts-expect-error — type mismatch with runtime behavior
-		const learnerHint = deps.sessionLearner?.suggest(task.agent, taskText);
+		const learnerHint = input.sessionLearner?.suggest(task.agent, taskText);
 
 		// Circuit breaker: check if agent is blocked
-// @ts-expect-error — type mismatch with runtime behavior
-		const breaker = deps.circuitBreaker;
+		const breaker = input.circuitBreaker;
 		if (breaker && breaker.isBlocked(task.agent)) {
 			const state = breaker.getState(task.agent);
 			const errorResult: SingleResult = {
@@ -291,10 +287,8 @@ export async function runForegroundParallelTasks(input: ForegroundParallelRunInp
 				: undefined,
 		}).then((result: SingleResult) => {
 			// Record result for circuit breaker + session learner
-// @ts-expect-error — type mismatch with runtime behavior
-			deps.circuitBreaker?.record(result.agent, result.exitCode, result.error);
-// @ts-expect-error — type mismatch with runtime behavior
-			deps.sessionLearner?.observe(result);
+			input.circuitBreaker?.record(result.agent, result.exitCode, result.error);
+			input.sessionLearner?.observe(result);
 			return result;
 		}).finally(() => {
 			if (input.foregroundControl?.currentIndex === index) {

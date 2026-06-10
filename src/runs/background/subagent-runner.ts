@@ -19,6 +19,7 @@ import {
 	type ModelAttempt,
 	type ArtifactPaths,
 	type AcceptanceLedger,
+	type AsyncStatus,
 	DEFAULT_MAX_OUTPUT,
 	truncateOutput,
 } from "../../shared/types.ts";
@@ -142,13 +143,10 @@ import {
 	runSingleStep,
 } from "./runner-streaming.ts";
 
-// @ts-expect-error — type mismatch with runtime behavior
 export type RunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
 };
 
-// @ts-expect-error — type mismatch with runtime behavior
-type RunnerStatusPayload = Omit<AsyncStatus, "steps" | "parallelGroups" | "pid" | "cwd" | "currentStep" | "chainStepCount" | "lastUpdate"> & {
-};
+import type { RunnerStatusPayload } from "./runner-parallel.ts";
 
 // Parallel group management extracted to runner-parallel.ts
 import {
@@ -270,7 +268,6 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				ts: Date.now(),
 				parentRunId: config.nestedSelf.parentRunId,
 				parentStepIndex: config.nestedSelf.parentStepIndex,
-// @ts-expect-error — type mismatch with runtime behavior
 				child: nestedSummaryFromAsyncStatus(statusPayload, asyncDir, {
 					id,
 					parentRunId: config.nestedSelf.parentRunId,
@@ -935,7 +932,6 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				if (worktreeTaskCwdConflict) {
 					const failedAt = Date.now();
 					markParallelGroupSetupFailure({
-// @ts-expect-error — type mismatch with runtime behavior
 						statusPayload,
 						results,
 						group,
@@ -962,7 +958,6 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 					const setupError = error instanceof Error ? error.message : String(error);
 					const failedAt = Date.now();
 					markParallelGroupSetupFailure({
-// @ts-expect-error — type mismatch with runtime behavior
 						statusPayload,
 						results,
 						group,
@@ -984,7 +979,6 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				if (group.worktree) ensureParallelProgressFile(cwd, group);
 				const groupStartTime = Date.now();
 				markParallelGroupRunning({
-// @ts-expect-error — type mismatch with runtime behavior
 					statusPayload,
 					group,
 					groupStartFlatIndex,

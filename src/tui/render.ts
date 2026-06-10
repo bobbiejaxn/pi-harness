@@ -132,9 +132,9 @@ function widgetStepStats(theme: Theme, step: NonNullable<AsyncJobState["steps"]>
 // modelThinkingBadge moved to render-helpers.ts
 
 function widgetStepActivityLine(step: NonNullable<AsyncJobState["steps"]>[number], width: number, expanded: boolean, snapshotNow?: number): string {
-	const toolLine = formatCurrentToolLine(step, width, expanded, snapshotNow);
+	const toolLine = formatCurrentToolLine(step as unknown as Partial<AgentProgress>, width, expanded, snapshotNow);
 	if (toolLine) return toolLine;
-	const activity = buildLiveStatusLine(step, snapshotNow);
+	const activity = buildLiveStatusLine(step as unknown as Partial<AgentProgress>, snapshotNow);
 	if (activity) return activity;
 	if (step.status === "running") return "thinking…";
 	return "";
@@ -170,7 +170,7 @@ export function foregroundStyleWidgetStepLines(
 		const output = widgetOutputPath(job, step);
 		if (output) lines.push(`    ${theme.fg("dim", `output: ${shortenPath(output)}`)}`);
 		if (expanded) {
-			const liveStatus = buildLiveStatusLine(step, job.updatedAt);
+			const liveStatus = buildLiveStatusLine(step as unknown as Partial<AgentProgress>, job.updatedAt);
 			if (liveStatus && liveStatus !== activity) lines.push(`    ${theme.fg("accent", liveStatus)}`);
 			for (const tool of step.recentTools?.slice(-3) ?? []) {
 				const maxArgsLen = Math.max(40, width - 30);

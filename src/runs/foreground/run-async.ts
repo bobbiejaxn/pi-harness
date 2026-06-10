@@ -143,8 +143,7 @@ export function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): Ag
 	if (hasChain && params.chain) {
 		const normalized = normalizeSkillInput(params.skill);
 		const chainSkills = normalized === false ? [] : (normalized ?? []);
-// @ts-expect-error — type mismatch with runtime behavior
-		const chain = wrapChainTasksForFork(params.chain as ChainStep[], params.context);
+		const chain = wrapChainTasksForFork(params.chain as ChainStep[], params.context, (t) => t);
 		return executeAsyncChain(id, {
 			chain,
 			task: params.task,

@@ -108,7 +108,7 @@ type RunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
 	exitCode?: number | null;
 };
 
-type RunnerStatusPayload = Omit<AsyncStatus, "steps" | "parallelGroups" | "pid" | "cwd" | "currentStep" | "chainStepCount" | "lastUpdate"> & {
+export type RunnerStatusPayload = Omit<AsyncStatus, "steps" | "parallelGroups" | "pid" | "cwd" | "currentStep" | "chainStepCount" | "lastUpdate"> & {
 	pid: number;
 	cwd: string;
 	currentStep: number;

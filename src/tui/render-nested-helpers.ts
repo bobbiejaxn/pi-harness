@@ -112,7 +112,7 @@ export function widgetActivity(job: AsyncJobState): string {
 	if (job.currentPath) facts.push(shortenPath(job.currentPath));
 	if (job.turnCount !== undefined) facts.push(`${job.turnCount} turns`);
 	if (job.toolCount !== undefined) facts.push(`${job.toolCount} tools`);
-	const activity = buildLiveStatusLine(job, job.updatedAt);
+	const activity = buildLiveStatusLine(job as Partial<AgentProgress>, job.updatedAt);
 	if (activity && facts.length) return `${activity} · ${facts.join(" · ")}`;
 	if (activity) return activity;
 	if (facts.length) return facts.join(" · ");
@@ -180,7 +180,7 @@ export function widgetStepActivity(step: NonNullable<AsyncJobState["steps"]>[num
 	if (step.turnCount !== undefined) facts.push(`${step.turnCount} turns`);
 	if (step.toolCount !== undefined) facts.push(`${step.toolCount} tools`);
 	if (step.tokens?.total) facts.push(formatTokenStat(step.tokens.total));
-	const activity = buildLiveStatusLine(step, snapshotNow);
+	const activity = buildLiveStatusLine(step as unknown as Partial<AgentProgress>, snapshotNow);
 	if (activity && facts.length) return `${activity} · ${facts.join(" · ")}`;
 	if (activity) return activity;
 	return facts.join(" · ");

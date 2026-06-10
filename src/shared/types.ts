@@ -516,6 +516,11 @@ export interface AsyncStatus {
 	totalTokens?: TokenUsage;
 	sessionFile?: string;
 	outputs?: ChainOutputMap;
+	error?: string;
+	artifactsDir?: string;
+	shareUrl?: string;
+	gistUrl?: string;
+	shareError?: string;
 }
 
 export type AsyncJobStep = NonNullable<AsyncStatus["steps"]>[number] & {

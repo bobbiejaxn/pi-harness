@@ -28,7 +28,7 @@ export interface AcceptanceGate {
 	level: AcceptanceLevel;
 	description?: string;
 	verifyCommand?: AcceptanceVerifyCommand;
-	review?: AcceptanceReviewGate;
+	review?: AcceptanceReviewGate | AcceptanceReviewGate[] | { agent?: string; required?: boolean };
 	autoCheck?: AcceptanceRuntimeCheck[];
 }
 
@@ -75,7 +75,6 @@ export interface AcceptanceConfig {
 
 export type AcceptanceInput = AcceptanceLevel | false | AcceptanceConfig;
 
-// @ts-expect-error — type mismatch with runtime behavior
 export interface ResolvedAcceptanceGate extends AcceptanceGate {
 	resolvedLevel: AcceptanceLevel;
 	verifyCommand?: AcceptanceVerifyCommand;
@@ -138,16 +137,18 @@ export type AcceptanceRuntimeCheckStatus = "passed" | "failed" | "not-applicable
 
 export interface AcceptanceRuntimeCheck {
 	id: string;
-	description: string;
+	description?: string;
 	status?: string;
 	evidence?: string;
 	message?: string;
-	check(): Promise<AcceptanceRuntimeCheckStatus> | AcceptanceRuntimeCheckStatus;
+	check?(): Promise<AcceptanceRuntimeCheckStatus> | AcceptanceRuntimeCheckStatus;
 }
 
 export interface AcceptanceVerifyResult {
 	id?: string;
 	status?: string;
+	command?: string;
+	cwd?: string;
 	exitCode: number | null;
 	stdout: string;
 	stderr: string;

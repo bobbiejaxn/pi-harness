@@ -7,6 +7,7 @@ import { type AgentConfig, type AgentScope } from "../../agents/agents.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
 import { resolveExecutionAgentScope } from "../../agents/agent-scope.ts";
 import { handleManagementAction } from "../../agents/agent-management.ts";
+import type { ManagementParams } from "../../agents/agent-management-helpers.ts";
 import { buildDoctorReport } from "../../extension/doctor.ts";
 import { clearPendingForegroundControlNotices } from "../../extension/control-notices.ts";
 import {
@@ -30,6 +31,7 @@ import { formatControlIntercomMessage, formatControlNoticeMessage, resolveContro
 import { createNestedRoute, readNestedControlResults, resolveInheritedNestedRouteFromEnv, resolveNestedAsyncDir, resolveNestedParentAddressFromEnv, updateForegroundNestedProjection, writeNestedControlRequest, writeNestedEvent, type NestedRunResolutionScope } from "../shared/nested-events.ts";
 import { resolveSubagentRunId, type ResolvedSubagentRunId } from "../background/run-id-resolver.ts";
 import { inspectSubagentStatus } from "../background/run-status.ts";
+import type { RunStatusParams } from "../background/run-status.ts";
 import { applyForceTopLevelAsyncOverride } from "../background/top-level-async.ts";
 import {
 	type ArtifactConfig,
@@ -150,8 +152,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 					const foreground = getForegroundControl(deps.state, undefined);
 					if (foreground) return foregroundStatusResult(foreground);
 				}
-// @ts-expect-error — type mismatch with runtime behavior
-				return inspectSubagentStatus(paramsWithResolvedCwd, { state: deps.state, nested: nestedResolutionScopeForExecutor(deps) });
+				return inspectSubagentStatus(paramsWithResolvedCwd as RunStatusParams, { state: deps.state, nested: nestedResolutionScopeForExecutor(deps) });
 			}
 			if (params.action === "resume") {
 				return resumeAsyncRun({ params: paramsWithResolvedCwd, requestCwd, ctx, deps });
@@ -207,8 +208,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 					details: { mode: "management" as const, results: [] },
 				};
 			}
-// @ts-expect-error — type mismatch with runtime behavior
-			return handleManagementAction(params.action, paramsWithResolvedCwd, { ...ctx, cwd: requestCwd });
+			return handleManagementAction(params.action, paramsWithResolvedCwd as ManagementParams, { ...ctx, cwd: requestCwd });
 		}
 
 		const { blocked, depth, maxDepth } = checkSubagentDepth(deps.config.maxSubagentDepth);

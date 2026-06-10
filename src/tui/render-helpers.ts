@@ -150,13 +150,13 @@ export function getToolCallLines(
 }
 
 
-export function snapshotNowForProgress(progress: Pick<AgentProgress, "currentToolStartedAt" | "durationMs" | "lastActivityAt">): number | undefined {
+export function snapshotNowForProgress(progress: Partial<AgentProgress>): number | undefined {
 	if (progress.currentToolStartedAt !== undefined && progress.durationMs !== undefined) return progress.currentToolStartedAt + progress.durationMs;
 	return progress.lastActivityAt;
 }
 
 export function formatCurrentToolLine(
-	progress: Pick<AgentProgress, "currentTool" | "currentToolArgs" | "currentToolStartedAt">,
+	progress: Partial<AgentProgress>,
 	availableWidth: number,
 	expanded: boolean,
 	snapshotNow?: number,
@@ -176,7 +176,7 @@ export function formatCurrentToolLine(
 		: `${progress.currentTool}${durationSuffix}`;
 }
 
-export function buildLiveStatusLine(progress: Pick<AgentProgress, "activityState" | "lastActivityAt">, snapshotNow?: number): string | undefined {
+export function buildLiveStatusLine(progress: Partial<AgentProgress>, snapshotNow?: number): string | undefined {
 	if (progress.lastActivityAt !== undefined && snapshotNow !== undefined) return formatActivityLabel(progress.lastActivityAt, progress.activityState, snapshotNow);
 	if (progress.activityState === "needs_attention") return "needs attention";
 	if (progress.activityState === "active_long_running") return "active but long-running";
@@ -231,7 +231,7 @@ export function resultGlyph(result: Details["results"][number], output: string, 
 	return theme.fg("success", "✓");
 }
 
-export function compactCurrentActivity(progress: AgentProgress): string {
+export function compactCurrentActivity(progress: Partial<AgentProgress>): string {
 	const snapshotNow = snapshotNowForProgress(progress);
 	return formatCurrentToolLine(progress, getTermWidth() - 4, false, snapshotNow) ?? buildLiveStatusLine(progress, snapshotNow) ?? "thinking…";
 }

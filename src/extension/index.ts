@@ -503,8 +503,7 @@ DIAGNOSTICS:
 		parameters: SubagentParams,
 
 		execute(id, params, signal, onUpdate, ctx) {
-// @ts-expect-error — type mismatch with runtime behavior
-			return executeSubagentCollapsed(id, params, signal, onUpdate, ctx);
+			return executeSubagentCollapsed(id, params as SubagentParamsLike, signal, onUpdate, ctx);
 		},
 
 		renderCall(args, theme) {

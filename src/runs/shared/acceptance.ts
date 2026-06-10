@@ -409,7 +409,6 @@ export async function evaluateAcceptance(input: {
 		ledger.status = "attested";
 	} else {
 		ledger.childReportParseError = parsed.error;
-		// @ts-expect-error — runtime shape differs from type definition
 		ledger.runtimeChecks.push({ id: "attestation", status: "failed", message: parsed.error ?? "Structured acceptance report missing." });
 		ledger.status = "rejected";
 		return ledger;
@@ -430,7 +429,6 @@ export async function evaluateAcceptance(input: {
 
 	if (LEVEL_RANK[acceptance.level] >= LEVEL_RANK.verified && (acceptance.level === "verified" || acceptance.verify.length > 0)) {
 		if (acceptance.level === "verified" && acceptance.verify.length === 0) {
-		// @ts-expect-error — runtime shape differs from type definition
 			ledger.runtimeChecks.push({ id: "verification-config", status: "failed", message: "verified acceptance requires runtime verify commands." });
 			ledger.status = "rejected";
 			return ledger;

@@ -601,9 +601,9 @@ export async function runSinglePath(data: ExecutionContextData, deps: ExecutorDe
 	const breaker = deps.circuitBreaker;
 	if (breaker && breaker.isBlocked(params.agent!)) {
 		const state = breaker.getState(params.agent!);
-// @ts-expect-error — type mismatch with runtime behavior
 		return {
 			content: [{ type: "text", text: `⛔ ${state.blockReason ?? `Agent \"${params.agent}\" is circuit-broken`}` }],
+			details: { mode: "single" as const, results: [] },
 		};
 	}
 
