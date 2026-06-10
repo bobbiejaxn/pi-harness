@@ -8,10 +8,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Message } from "@earendil-works/pi-ai";
-import { writeAtomicJson } from "../../shared/atomic-json.ts";
-import { appendJsonl, getArtifactPaths } from "../../shared/artifacts.ts";
 import { PI_CODING_AGENT_PACKAGE, getPiSpawnCommand, resolveInstalledPiPackageRoot } from "../shared/pi-spawn.ts";
-import { captureSingleOutputSnapshot, finalizeSingleOutput, formatSavedOutputReference, resolveSingleOutput, type SingleOutputSnapshot } from "../shared/single-output.ts";
 import {
 	type ActivityState,
 	type ArtifactConfig,
@@ -30,59 +27,7 @@ import {
 	truncateOutput,
 	getSubagentDepthEnv,
 } from "../../shared/types.ts";
-import {
-	DEFAULT_CONTROL_CONFIG,
-	buildControlEvent,
-	deriveActivityState,
-	claimControlNotification,
-	formatControlIntercomMessage,
-	formatControlNoticeMessage,
-} from "../shared/subagent-control.ts";
-import {
-	type RunnerSubagentStep as SubagentStep,
-	type RunnerStep,
-	isDynamicRunnerGroup,
-	isParallelGroup,
-	flattenSteps,
-	mapConcurrent,
-	aggregateParallelOutputs,
-	MAX_PARALLEL_CONCURRENCY,
-} from "../shared/parallel-utils.ts";
-import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
-import { outputEntryFromAsyncResult, resolveOutputReferences } from "../shared/chain-outputs.ts";
-import { createStructuredOutputRuntime, readStructuredOutput } from "../shared/structured-output.ts";
-import { collectDynamicResults, DynamicFanoutError, materializeDynamicParallelStep, validateDynamicCollection } from "../shared/dynamic-fanout.ts";
-import { nestedSummaryFromAsyncStatus, writeNestedEvent } from "../shared/nested-events.ts";
-import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model-fallback.ts";
-import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
-import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput } from "../../shared/utils.ts";
-import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
-import {
-	createMutatingFailureState,
-	didMutatingToolFail,
-	isMutatingTool,
-	nextLongRunningTrigger,
-	recordMutatingFailure,
-	resetMutatingFailureState,
-	resolveCurrentPath,
-	shouldEscalateMutatingFailures,
-	summarizeRecentMutatingFailures,
-} from "../shared/long-running-guard.ts";
-import { parseSessionTokens } from "../../shared/session-tokens.ts";
 import type { TokenUsage } from "../../shared/types.ts";
-import {
-	cleanupWorktrees,
-	createWorktrees,
-	diffWorktrees,
-	findWorktreeTaskCwdConflict,
-	formatWorktreeDiffSummary,
-	formatWorktreeTaskCwdConflict,
-	type WorktreeSetup,
-} from "../shared/worktree.ts";
-import { resolveEffectiveThinking } from "../../shared/model-info.ts";
-import { writeInitialProgressFile } from "../../shared/settings.ts";
-import { resolveSubagentIntercomTarget } from "../../intercom/intercom-bridge.ts";
-import { acceptanceFailureMessage, aggregateAcceptanceReport, evaluateAcceptance, formatAcceptancePrompt, stripAcceptanceReport } from "../shared/acceptance.ts";
 
 
 

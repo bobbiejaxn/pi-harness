@@ -7,16 +7,7 @@
  * Core execution logic for running subagents
  */
 
-import { spawn } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
 import type { Message } from "@earendil-works/pi-ai";
-import type { AgentConfig } from "../../agents/agents.ts";
-import {
-	ensureArtifactsDir,
-	getArtifactPaths,
-	writeArtifact,
-	writeMetadata,
-} from "../../shared/artifacts.ts";
 import {
 	type AgentProgress,
 	type ArtifactPaths,
@@ -31,51 +22,7 @@ import {
 	truncateOutput,
 	getSubagentDepthEnv,
 } from "../../shared/types.ts";
-import {
-	DEFAULT_CONTROL_CONFIG,
-	buildControlEvent,
-	claimControlNotification,
-	deriveActivityState,
-	shouldNotifyControlEvent,
-} from "../shared/subagent-control.ts";
-import {
-	getFinalOutput,
-	findLatestSessionFile,
-	detectSubagentError,
-	extractToolArgsPreview,
-	extractTextFromContent,
-} from "../../shared/utils.ts";
-import { buildSkillInjection, resolveSkillsWithFallback } from "../../agents/skills.ts";
-import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
-import { getPiSpawnCommand } from "../shared/pi-spawn.ts";
-import { createJsonlWriter } from "../../shared/jsonl-writer.ts";
-import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
-import { applyThinkingSuffix, buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
-import { readStructuredOutput } from "../shared/structured-output.ts";
-import { captureSingleOutputSnapshot, formatSavedOutputReference, resolveSingleOutput, validateFileOnlyOutputMode, type SingleOutputSnapshot } from "../shared/single-output.ts";
-import {
-	buildModelCandidates,
-	formatModelAttemptNote,
-	isRetryableModelFailure,
-} from "../shared/model-fallback.ts";
-import {
-	createMutatingFailureState,
-	didMutatingToolFail,
-	isMutatingTool,
-	nextLongRunningTrigger,
-	recordMutatingFailure,
-	resetMutatingFailureState,
-	resolveCurrentPath,
-	shouldEscalateMutatingFailures,
-	summarizeRecentMutatingFailures,
-} from "../shared/long-running-guard.ts";
 import { acceptanceFailureMessage, evaluateAcceptance, formatAcceptancePrompt, resolveEffectiveAcceptance, stripAcceptanceReport } from "../shared/acceptance.ts";
-import { checkRunCostLimit, formatCost } from "../../shared/cost-guard.ts";
-import { resolveTimeout, formatTimeout } from "../../shared/cascading-timeout.ts";
-import { shouldRetry, sleep } from "../../shared/retry-logic.ts";
-import { resolveTraceRunId, buildTraceEnv, writePidFile, removePidFile, resolveSpawnDepth } from "../../shared/trace-propagation.ts";
-import { buildDomainEnv } from "../../shared/domain-enforcement.ts";
-import { ExecutionGuard } from "../../shared/execution-guard.ts";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 

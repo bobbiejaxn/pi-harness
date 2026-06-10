@@ -14,7 +14,6 @@ import {
 	type SubagentRunMode,
 	type SubagentState,
 } from "../../shared/types.ts";
-import { isSafeNestedPathId, parseNestedPathEnv, sanitizeNestedPath, type NestedPathEntry } from "./nested-path.ts";
 // SUBAGENT_PARENT_* env vars moved to nested-routes.ts
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 

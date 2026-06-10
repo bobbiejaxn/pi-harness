@@ -3,7 +3,6 @@
  * Extracted from render.ts.
  */
 
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	type AgentProgress,
@@ -11,7 +10,6 @@ import {
 } from "../shared/types.ts";
 import { formatTokens, formatDuration, formatToolCall, formatModelThinking } from "../shared/formatters.ts";
 import { getDisplayItems } from "../shared/utils.ts";
-import { formatActivityLabel } from "../shared/status-format.ts";
 
 // Re-export Theme type for consumers
 export type Theme = import("@earendil-works/pi-coding-agent").ExtensionContext["ui"]["theme"];

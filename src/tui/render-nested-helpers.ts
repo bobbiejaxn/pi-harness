@@ -7,10 +7,6 @@
  * Rendering functions for subagent results
  */
 
-import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { getMarkdownTheme, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Container, Markdown, Spacer, Text, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import {
 	type AgentProgress,
 	type AsyncJobState,
@@ -24,10 +20,7 @@ import {
 	WIDGET_KEY,
 } from "../shared/types.ts";
 import { formatTokens, formatUsage, formatDuration, formatModelThinking, formatToolCall, shortenPath } from "../shared/formatters.ts";
-import { getDisplayItems, getSingleResultOutput } from "../shared/utils.ts";
-import { flatToLogicalStepIndex } from "../runs/background/parallel-groups.ts";
 import { formatNestedAggregate } from "../runs/shared/nested-render.ts";
-import { aggregateStepStatus, formatActivityLabel, formatAgentRunningLabel, formatParallelOutcome } from "../shared/status-format.ts";
 
 // Shared helpers extracted to render-helpers.ts
 import {
@@ -232,24 +225,6 @@ export function widgetParallelAgentDetails(job: AsyncJobState, theme: Theme, exp
 // parseParallelGroupAgentCount moved to render-chain.ts (imported below)
 
 // Chain types/helpers extracted to render-chain.ts
-import type {
-	ChainStepSpan,
-	ChainRenderResultEntry,
-	ChainRenderPlaceholderEntry,
-	ChainRenderEntry,
-	MultiProgressLabel,
-} from "./render-chain.ts";
-import {
-	buildChainStepSpans,
-	isChainParallelGroupActive,
-	buildAsyncChainStepSpans,
-	isDoneResult,
-	workflowGraphHasStatus,
-	buildChainRenderEntries,
-	buildMultiProgressLabel,
-	resultRowLabel,
-	parseParallelGroupAgentCount,
-} from "./render-chain.ts";
 
 export function nestedRunName(run: NestedRunSummary): string {
 	if (run.agent) return run.agent;
