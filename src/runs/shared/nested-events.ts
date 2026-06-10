@@ -202,7 +202,7 @@ export interface NestedRunMatch {
 
 export interface NestedRunResolutionScope {
 	routes: NestedRoute[];
-	descendantOf?: { runId: string; stepIndex?: number; parentRunId?: string; parentStepIndex?: number };
+	descendantOf?: { runId?: string; stepIndex?: number; parentRunId?: string; parentStepIndex?: number };
 }
 
 function collectNestedRuns(children: NestedRunSummary[] | undefined, output: NestedRunSummary[] = []): NestedRunSummary[] {

@@ -355,7 +355,8 @@ export function renamePath(
 	scope: ManagementScope | AgentSource,
 	cwd: string,
 ): { filePath?: string; error?: string } {
-	if (nameExistsInScope(cwd, scope, newName, currentPath)) return { error: `Name '${newName}' already exists in ${scope} scope.` };
+	const effectiveScope = (scope === "builtin" ? "project" : scope) as ManagementScope;
+	if (nameExistsInScope(cwd, effectiveScope, newName, currentPath)) return { error: `Name '${newName}' already exists in ${effectiveScope} scope.` };
 	const ext = kind === "agent" ? ".md" : currentPath.endsWith(".chain.json") ? ".chain.json" : ".chain.md";
 	const filePath = path.join(path.dirname(currentPath), `${newName}${ext}`);
 	if (fs.existsSync(filePath) && filePath !== currentPath) {

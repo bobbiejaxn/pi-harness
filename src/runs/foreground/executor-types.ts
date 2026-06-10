@@ -28,8 +28,8 @@ import type {
 	SingleResult,
 	SubagentState,
 	AgentProgress,
-	WorktreeSetup,
 } from "../../shared/types.ts";
+import type { WorktreeSetup } from "../shared/worktree.ts";
 import type { ModelInfo } from "../../shared/model-info.ts";
 import type { ChainStep, resolveStepBehavior } from "../../shared/settings.ts";
 import type { ControlEvent } from "../../shared/types.ts";

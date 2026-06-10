@@ -49,7 +49,7 @@ import { resolveTraceRunId, buildTraceEnv, resolveSpawnDepth, writePidFile, remo
 
 
 const require = createRequire(import.meta.url);
-const piPackageRoot = resolvePiPackageRoot();
+export const piPackageRoot = resolvePiPackageRoot();
 
 
 export function resolveJitiCliFromPackageJson(packageJsonPath: string): string | undefined {

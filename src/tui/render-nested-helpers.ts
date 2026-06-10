@@ -21,6 +21,9 @@ import {
 } from "../shared/types.ts";
 import { formatTokens, formatUsage, formatDuration, formatModelThinking, formatToolCall, shortenPath } from "../shared/formatters.ts";
 import { formatNestedAggregate } from "../runs/shared/nested-render.ts";
+import { buildAsyncChainStepSpans } from "./render-chain.ts";
+import { aggregateStepStatus, formatParallelOutcome } from "../shared/status-format.ts";
+import { foregroundStyleWidgetStepLines } from "./render.ts";
 
 // Shared helpers extracted to render-helpers.ts
 import {

@@ -299,6 +299,7 @@ export interface SingleResult {
 	structuredOutputPath?: string;
 	structuredOutputSchemaPath?: string;
 	acceptance?: AcceptanceLedger;
+	stopReason?: string;
 }
 
 export interface Details {

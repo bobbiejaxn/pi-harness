@@ -6,7 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { NestedRunSummary } from "../background/run-id-resolver.ts";
+import type { NestedRunSummary } from "../../shared/types.ts";
 
 /** True if the error indicates the async run does not exist. */
 export function isAsyncRunNotFound(error: unknown): boolean {
