@@ -15,7 +15,8 @@ import {
 	resolveWorktreeSetupHook,
 	runWorktreeSetupHook,
 } from "./worktree-internal.ts";
-// Re-export for backward compat
+// Types re-exported for backward compat (also imported for local use)
+import type { WorktreeInfo, WorktreeSetup, ResolvedWorktreeSetupHook, WorktreeDiff, CreateWorktreesOptions } from "./worktree-internal.ts";
 export { findWorktreeTaskCwdConflict, formatWorktreeTaskCwdConflict, resolveExpectedWorktreeAgentCwd } from "./worktree-internal.ts";
 export type { WorktreeInfo, WorktreeSetup, ResolvedWorktreeSetupHook, WorktreeDiff, CreateWorktreesOptions } from "./worktree-internal.ts";
 

@@ -106,7 +106,7 @@ type ChildMessage = Message & {
 	usage?: ChildUsage;
 };
 
-interface ChildEvent {
+export interface ChildEvent {
 	type?: string;
 	message?: ChildMessage;
 	toolName?: string;

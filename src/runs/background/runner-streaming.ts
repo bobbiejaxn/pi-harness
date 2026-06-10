@@ -339,7 +339,7 @@ export function runPiStreaming(
 	});
 }
 
-async function runSingleStep(
+export async function runSingleStep(
 	step: SubagentStep,
 	ctx: SingleStepContext,
 ): Promise<{

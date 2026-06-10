@@ -135,13 +135,14 @@ import {
 	createShareLink,
 	writeRunLog,
 } from "./runner-utils.ts";
+import type { ChildEvent } from "./runner-utils.ts";
 
 // Streaming functions shared via runner-streaming.ts
 import {
 	runSingleStep,
 } from "./runner-streaming.ts";
 
-type RunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
+export type RunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
 };
 
 type RunnerStatusPayload = Omit<AsyncStatus, "steps" | "parallelGroups" | "pid" | "cwd" | "currentStep" | "chainStepCount" | "lastUpdate"> & {
