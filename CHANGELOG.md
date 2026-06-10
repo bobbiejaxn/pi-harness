@@ -2,6 +2,36 @@
 
 All notable changes to pi-harness are documented here.
 
+## [1.4.0] — 2026-06-09
+
+### Onboarding and package quality
+
+**New: `--verify` flag** — machine-parseable installation verification.
+Outputs JSON, exits 0/1. Designed for agents and CI.
+
+```bash
+npx pi-harness --verify
+# {"ok":true,"version":"1.4.0","path":"/project/.pi/extensions/subagent"}
+```
+
+**New: `exports` map** — programmatic imports now work:
+
+```ts
+import { Cron, ComsClient } from "pi-harness";
+import { discoverAgents } from "pi-harness/agents";
+```
+
+**Rewritten README** with:
+- Agent onboarding prompt (copy-paste for new projects)
+- Public API documentation
+- Accurate test counts (890 unit tests)
+- Updated install commands (`npx pi-harness`)
+
+### Commits since v1.3.2
+- `3a268af` — 22 unit tests for execution, executor-interrupt, executor-helpers
+- `3b9f517` — 8 unit tests for chain-helpers
+- `128649f` — v1.3.2 release
+
 ## [1.3.2] — 2026-06-09
 
 ### Test Coverage: 64 new unit tests for critical modules

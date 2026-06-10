@@ -155,6 +155,66 @@ function check(projectRoot) {
 	}
 }
 
+/**
+ * Verify installation — machine-parseable, exits 0 or 1.
+ *
+ * Output format (one JSON object per line):
+ *   { "ok": true, "version": "1.3.2", "path": "/project/.pi/extensions/subagent" }
+ *   { "ok": false, "error": "not installed" }
+ *   { "ok": false, "error": "conflict", "detail": "user-level subagent at ~/.pi/agent/extensions/subagent" }
+ *   { "ok": false, "error": "incomplete", "detail": "missing src/extension/index.ts" }
+ *   { "ok": false, "error": "missing_deps", "detail": "node_modules not found — run: cd <path> && npm install --omit=dev" }
+ */
+function verify(projectRoot) {
+	const extDir = getExtensionDir(projectRoot);
+	const errors = [];
+
+	// 1. Directory exists
+	if (!fs.existsSync(extDir)) {
+		console.log(JSON.stringify({ ok: false, error: "not_installed" }));
+		process.exit(1);
+	}
+
+	// 2. package.json readable + version
+	let version = "unknown";
+	try {
+		const pkg = JSON.parse(fs.readFileSync(path.join(extDir, "package.json"), "utf-8"));
+		version = pkg.version || "unknown";
+	} catch {
+		errors.push({ error: "incomplete", detail: "package.json missing or unreadable" });
+	}
+
+	// 3. Extension entry point exists
+	const indexPath = path.join(extDir, "src", "extension", "index.ts");
+	if (!fs.existsSync(indexPath)) {
+		errors.push({ error: "incomplete", detail: "missing src/extension/index.ts" });
+	}
+
+	// 4. Runtime dependencies installed
+	const nodeModules = path.join(extDir, "node_modules");
+	if (!fs.existsSync(nodeModules)) {
+		errors.push({ error: "missing_deps", detail: `node_modules not found — run: cd ${extDir} && npm install --omit=dev` });
+	}
+
+	// 5. User-level conflict
+	const userLevel = path.join(
+		process.env.HOME || "/dev/null",
+		".pi/agent/extensions/subagent",
+	);
+	if (fs.existsSync(userLevel)) {
+		errors.push({ error: "conflict", detail: `user-level subagent at ${userLevel}` });
+	}
+
+	if (errors.length > 0) {
+		const first = errors[0];
+		console.log(JSON.stringify({ ok: false, ...first, version, path: extDir }));
+		process.exit(1);
+	}
+
+	console.log(JSON.stringify({ ok: true, version, path: extDir }));
+	process.exit(0);
+}
+
 function update(projectRoot) {
 	const extDir = getExtensionDir(projectRoot);
 	if (!fs.existsSync(extDir)) {
@@ -199,10 +259,11 @@ if (args.includes("--help") || args.includes("-h")) {
 pi-harness - Project-level subagent execution engine for pi
 
 Usage:
-  node install.mjs              Install to .pi/extensions/subagent/
-  node install.mjs --remove     Remove from this project
-  node install.mjs --check      Check installation status
-  node install.mjs --update     Pull latest from GitHub
+  npx pi-harness                Install to .pi/extensions/subagent/
+  npx pi-harness --verify       Verify install (JSON output, exits 0/1)
+  npx pi-harness --check        Check installation status (human)
+  npx pi-harness --remove       Remove from this project
+  npx pi-harness --update       Pull latest from GitHub
 
 Project root detected: ${projectRoot}
 
@@ -214,6 +275,8 @@ Never install to ~/.pi/agent/extensions/ — it conflicts with upstream pi-subag
 
 if (args.includes("--remove") || args.includes("-r")) {
 	remove(projectRoot);
+} else if (args.includes("--verify") || args.includes("-V")) {
+	verify(projectRoot);
 } else if (args.includes("--check") || args.includes("-c")) {
 	check(projectRoot);
 } else if (args.includes("--update") || args.includes("-u")) {

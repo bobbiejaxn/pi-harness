@@ -4,15 +4,6 @@ Production-hardened subagent execution engine for [pi](https://github.com/nicoba
 
 Forked from [pi-subagents](https://github.com/nicobailon/pi-subagents) v0.26.0.
 
-## ⚠️ Project-level only
-
-```
-✅ your-project/.pi/extensions/subagent/   ← install here
-❌ ~/.pi/agent/extensions/subagent/        ← NEVER (conflicts with upstream)
-```
-
-Both register a `subagent` tool — pi refuses to load both. Project-level = your project's customized version, version-controlled, no implicit deps.
-
 ## Install
 
 ```bash
@@ -20,7 +11,44 @@ cd your-project
 npx pi-harness
 ```
 
-That's it. Pi auto-discovers the extension when you run it in that directory.
+Pi auto-discovers the extension. No config required to start delegating.
+
+### Verify
+
+```bash
+npx pi-harness --verify
+```
+
+Outputs JSON, exits 0 on success, 1 on failure:
+
+```json
+{"ok":true,"version":"1.3.2","path":"/project/.pi/extensions/subagent"}
+```
+
+```json
+{"ok":false,"error":"not_installed"}
+```
+
+```json
+{"ok":false,"error":"conflict","detail":"user-level subagent at ~/.pi/agent/extensions/subagent"}
+```
+
+### Other commands
+
+```bash
+npx pi-harness --check      # Human-readable status
+npx pi-harness --update     # Pull latest from GitHub
+npx pi-harness --remove     # Uninstall from this project
+```
+
+## ⚠️ Project-level only
+
+```
+✅ your-project/.pi/extensions/subagent/   ← install here
+❌ ~/.pi/agent/extensions/subagent/         ← NEVER (conflicts with upstream)
+```
+
+Both register a `subagent` tool — pi refuses to load both. Project-level = version-controlled, no implicit deps.
 
 ## Quick start
 
@@ -38,7 +66,42 @@ Run parallel reviewers: one for correctness, one for tests.
 Ask worker to implement the login page based on the plan.
 ```
 
-No agents, config, or slash commands needed to start delegating.
+## Agent onboarding
+
+When starting a new project and installing pi-harness, use this prompt:
+
+> Install pi-harness into this project by running `npx pi-harness`. This adds the subagent extension to `.pi/extensions/subagent/`. After install, verify with `npx pi-harness --verify` — it should output `{"ok":true,...}` and exit 0. If it reports a conflict with user-level subagent, remove `~/.pi/agent/extensions/subagent/`. The extension registers a `subagent` tool that pi auto-discovers when run in the project directory.
+
+### What pi-harness adds
+
+| Tool | Description |
+|------|-------------|
+| `subagent` | Delegate tasks to child agents with safety guards |
+| `/deliberate` | Board of 8 advisor agents for strategic decisions |
+| `/ship` | Review → QA → deploy gate |
+
+### Agent names
+
+Built-in agents discovered from `.pi/agents/` and inline config:
+
+| Agent | Purpose |
+|-------|---------|
+| `researcher` | Deep analysis and information gathering |
+| `writer` | Content generation and documentation |
+| `scout` | Code analysis and exploration |
+| `worker` | Implementation and coding tasks |
+| `reviewer` | Code review and quality checks |
+| `critic` | Find flaws and edge cases |
+
+Custom agents go in `.pi/agents/<name>.md` with YAML frontmatter:
+
+```markdown
+---
+model: sonnet
+skills: [bash, read]
+---
+You are a database migration specialist.
+```
 
 ## How it works
 
@@ -50,7 +113,7 @@ Pi is the parent. A subagent is a focused child Pi session. When you delegate, P
 
 ## Safety features
 
-pi-harness adds five safety layers that the upstream doesn't have:
+Five safety layers the upstream doesn't have:
 
 | Layer | What it catches | Config key |
 |-------|----------------|------------|
@@ -111,6 +174,35 @@ All optional. Create `.pi/extensions/subagent/config.json`:
 | `PI_SUBAGENT_TIMEOUT_MS` | Cascading timeout base |
 | `PI_SUBAGENT_MAX_RETRIES` | `retry.maxRetries` |
 
+## Programmatic API
+
+For consumers that import pi-harness as a library dependency:
+
+```ts
+import { Cron, ComsClient, ConvexAdapter, TraceRecorder, runGates } from "pi-harness";
+```
+
+Or target a specific export:
+
+```ts
+import { Cron } from "pi-harness/public-api";
+import { discoverAgents } from "pi-harness/agents";
+```
+
+### API surface
+
+| Export | Purpose |
+|--------|---------|
+| `Cron` | In-process job scheduler with DLQ |
+| `createTraceSummarizerJob` | Cron job that summarizes JSONL traces |
+| `ComsClient` | HTTP client for coms-net peer network |
+| `resolveComsConfig` | Resolve coms config from env/flags |
+| `ConvexAdapter` | Typed persistence (Convex or local JSONL) |
+| `TraceRecorder` | JSONL trace persistence for subagent events |
+| `runGates` | Acceptance gate runner |
+| `defaultNodeGates` | Default gate set for Node.js projects |
+| `discoverAgents` | Scan project for agent definitions |
+
 ## Modules
 
 16 production modules in `src/shared/`:
@@ -135,20 +227,31 @@ All optional. Create `.pi/extensions/subagent/config.json`:
 
 ## Tests
 
-- **255 unit tests** across 16 files
-- **65 structural checks** (module wiring verification)
-- **11 live E2E checks** (real pi processes)
+- **890 unit tests** across 40+ files — all in CI
+- **25 integration tests** — mock subprocess spawning
+- **0 type errors** — enforced by CI
 
 ```bash
-# Unit tests
-node --experimental-strip-types --test test/unit/*.test.ts
+# Unit tests (CI gate)
+npm run test:unit
 
-# Structural
-bash test/integration/structural.sh
+# Integration tests (require --experimental-transform-types)
+npm run test:integration
 
-# Full E2E suite
-bash test/integration/run-all.sh
+# Type checking
+npm run typecheck
+
+# Linting
+npm run lint
 ```
+
+## Namespace compatibility
+
+Works with both pi package namespaces:
+- `@earendil-works/pi-*` (v0.78+, current)
+- `@mariozechner/pi-*` (v0.73+, legacy)
+
+Both resolve at runtime — no source changes needed.
 
 ## Detailed documentation
 
@@ -160,14 +263,6 @@ The upstream pi-subagents README covers advanced topics in depth:
 - **[Acceptance gates](docs/upstream-README.md#acceptance-gates)** — structured verification of agent output
 - **[Intercom bridge](docs/upstream-README.md#intercom-bridge)** — parent-child communication
 - **[Skills and tool selection](docs/upstream-README.md#skills)** — per-agent skill and extension control
-
-## Namespace compatibility
-
-Works with both pi package namespaces:
-- `@earendil-works/pi-*` (v0.78+, current)
-- `@mariozechner/pi-*` (v0.73+, legacy)
-
-Both resolve at runtime — no source changes needed when dropping into projects using either namespace.
 
 ## License
 
