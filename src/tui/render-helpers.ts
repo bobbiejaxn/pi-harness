@@ -3,7 +3,7 @@
  * Extracted from render.ts.
  */
 
-import { visibleWidth, type Component, Container } from "@earendil-works/pi-tui";
+import { visibleWidth, type Component, Container, Text } from "@earendil-works/pi-tui";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	type AgentProgress,
