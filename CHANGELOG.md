@@ -2,6 +2,22 @@
 
 All notable changes to pi-harness are documented here.
 
+## [1.3.2] — 2026-06-09
+
+### Test Coverage: 64 new unit tests for critical modules
+
+Added tests for 7 previously untested modules in the core execution path.
+Test count: 826→890.
+
+**New test files:**
+- `runner-utils.test.ts` (17 tests) — token accumulation, output append, step reset, duration format, run log
+- `runner-parallel.test.ts` (7 tests) — setup failure, group running, task prep, progress file
+- `runner-finalize.test.ts` (10 tests) — status finalization, result file, events, truncation, interrupt
+- `execution.test.ts` (4 tests) — unknown agent, output mode validation, skill check
+- `executor-interrupt.test.ts` (10 tests) — resume target resolution, ambiguous prefix, index validation
+- `executor-helpers.test.ts` (8 tests) — cwd resolution, foreground run storage, eviction
+- `chain-helpers.test.ts` (8 tests) — chain detail building, error result construction
+
 ## [1.3.1] — 2026-06-09
 
 ### Refactor: 6 files under 500 LOC ceiling
