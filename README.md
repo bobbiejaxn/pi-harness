@@ -4,6 +4,8 @@ Production-hardened subagent execution engine for [pi](https://github.com/nicoba
 
 Forked from [pi-subagents](https://github.com/nicobailon/pi-subagents) v0.26.0.
 
+> **This is the engine.** If you want the full autonomous agent fleet (CEO loop, 62 specialists, 26 extensions, slash commands, enforcement scripts, self-learning), use [**pi_launchpad**](https://github.com/bobbiejaxn/pi_launchpad) instead — it includes pi-harness and adds everything else.
+
 ## Install
 
 ```bash
