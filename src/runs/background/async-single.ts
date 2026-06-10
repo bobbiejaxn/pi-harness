@@ -57,6 +57,8 @@ import {
 	spawnRunner,
 	formatAsyncStartError,
 } from "./async-helpers.ts";
+import type { AsyncExecutionResult, AsyncSingleParams } from "./async-helpers.ts";
+import { UNAVAILABLE_SUBAGENT_SKILL_ERROR } from "./async-helpers.ts";
 
 // Re-export for backward compat
 export { formatAsyncStartedMessage, isAsyncAvailable } from "./async-helpers.ts";

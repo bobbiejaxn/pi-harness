@@ -33,7 +33,7 @@ export interface ChainClarifyResult {
 type EditMode = "template" | "output" | "reads" | "model" | "thinking" | "skills";
 
 
-import { createEditorState, handleEditorInput, renderEditor, wordBackward, wordForward, type TextEditorState } from "./clarify-editor.ts";
+import { createEditorState, handleEditorInput, renderEditor, wordBackward, wordForward, type TextEditorState, ensureCursorVisible, getCursorDisplayPos, wrapText } from "./clarify-editor.ts";
 
 export class ChainClarifyComponent implements Component {
 	readonly width = 84;

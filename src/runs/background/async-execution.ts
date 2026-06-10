@@ -46,9 +46,14 @@ import { resolveTraceRunId, buildTraceEnv, resolveSpawnDepth, writePidFile, remo
 import {
 	spawnRunner,
 	formatAsyncStartError,
+	AsyncStartValidationError,
+	UnavailableSubagentSkillError,
+	UNAVAILABLE_SUBAGENT_SKILL_ERROR,
 } from "./async-helpers.ts";
+import type { AsyncChainParams, AsyncExecutionResult } from "./async-helpers.ts";
 // Re-export for backward compat
-export { formatAsyncStartedMessage, isAsyncAvailable } from "./async-helpers.ts";
+import { formatAsyncStartedMessage, isAsyncAvailable } from "./async-helpers.ts";
+export { formatAsyncStartedMessage, isAsyncAvailable };
 
 
 const require = createRequire(import.meta.url);

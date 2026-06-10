@@ -14,6 +14,7 @@ import {
 	type SubagentRunMode,
 	type SubagentState,
 } from "../../shared/types.ts";
+import { SUBAGENT_PARENT_EVENT_SINK_ENV, SUBAGENT_PARENT_CONTROL_INBOX_ENV, SUBAGENT_PARENT_ROOT_RUN_ID_ENV, SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV } from "./pi-args.ts";
 // SUBAGENT_PARENT_* env vars moved to nested-routes.ts
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 

@@ -350,7 +350,7 @@ export async function runParallelChainTasks(input: ParallelChainRunInput): Promi
 	return parallelResults;
 }
 
-interface ChainExecutionParams {
+export interface ChainExecutionParams {
 	chain: ChainStep[];
 	task?: string;
 	agents: AgentConfig[];

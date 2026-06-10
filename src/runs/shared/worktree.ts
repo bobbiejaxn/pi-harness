@@ -17,6 +17,7 @@ import {
 } from "./worktree-internal.ts";
 // Re-export for backward compat
 export { findWorktreeTaskCwdConflict, formatWorktreeTaskCwdConflict, resolveExpectedWorktreeAgentCwd } from "./worktree-internal.ts";
+export type { WorktreeInfo, WorktreeSetup, ResolvedWorktreeSetupHook, WorktreeDiff, CreateWorktreesOptions } from "./worktree-internal.ts";
 
 function createSingleWorktree(
 	toplevel: string,

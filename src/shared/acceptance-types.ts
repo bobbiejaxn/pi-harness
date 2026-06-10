@@ -15,7 +15,14 @@ export type AcceptanceEvidenceKind =
 	| "build-clean"
 	| "coverage-delta"
 	| "manual-attestation"
-	| "review-override";
+	| "review-override"
+	| "commands-run"
+	| "validation-output"
+	| "residual-risks"
+	| "no-staged-files"
+	| "diff-summary"
+	| "review-findings"
+	| "manual-notes";
 
 export interface AcceptanceGate {
 	readonly level: AcceptanceLevel;
@@ -126,10 +133,13 @@ export type AcceptanceRuntimeCheckStatus = "passed" | "failed" | "not-applicable
 export interface AcceptanceRuntimeCheck {
 	readonly id: string;
 	readonly description: string;
+	readonly status?: string;
+	readonly evidence?: string;
 	readonly check(): Promise<AcceptanceRuntimeCheckStatus> | AcceptanceRuntimeCheckStatus;
 }
 
 export interface AcceptanceVerifyResult {
+	readonly id?: string;
 	readonly exitCode: number | null;
 	readonly stdout: string;
 	readonly stderr: string;
@@ -152,7 +162,8 @@ export type AcceptanceLedgerStatus =
 	| "passed"
 	| "failed"
 	| "skipped"
-	| "waived";
+	| "waived"
+	| "rejected";
 
 export interface AcceptanceLedger {
 	readonly gates: Array<{

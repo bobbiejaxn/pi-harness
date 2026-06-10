@@ -3,13 +3,16 @@
  * Extracted from render.ts.
  */
 
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth, type Component, Container } from "@earendil-works/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	type AgentProgress,
 	type Details,
 } from "../shared/types.ts";
 import { formatTokens, formatDuration, formatToolCall, formatModelThinking } from "../shared/formatters.ts";
-import { getDisplayItems } from "../shared/utils.ts";
+import { getDisplayItems, getSingleResultOutput } from "../shared/utils.ts";
+import { formatActivityLabel } from "../shared/status-format.ts";
+import { shortenPath } from "../shared/formatters.ts";
 
 // Re-export Theme type for consumers
 export type Theme = import("@earendil-works/pi-coding-agent").ExtensionContext["ui"]["theme"];
@@ -18,8 +21,6 @@ export const RUNNING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", 
 export const STATIC_RUNNING_GLYPH = "●";
 
 export type ProgressSeedSource = Partial<Pick<AgentProgress, "index" | "toolCount" | "tokens" | "durationMs" | "lastActivityAt" | "currentToolStartedAt" | "turnCount">>;
-
-export type Theme = ExtensionContext["ui"]["theme"];
 
 export function getTermWidth(): number {
 	return process.stdout.columns || 120;

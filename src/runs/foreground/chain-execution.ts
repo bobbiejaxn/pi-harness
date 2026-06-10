@@ -64,6 +64,7 @@ import {
 	ensureParallelProgressFile,
 	runParallelChainTasks,
 } from "./chain-helpers.ts";
+import type { ChainExecutionParams, ChainExecutionResult, ChainExecutionDetailsInput } from "./chain-helpers.ts";
 
 export async function executeChain(params: ChainExecutionParams): Promise<ChainExecutionResult> {
 	const {

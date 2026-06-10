@@ -83,6 +83,7 @@ import {
   stripAcceptanceReportsFromMessages,
   sumUsage,
 } from "./execution-helpers.ts";
+import { CHILD_DOMAIN_GUARD_PATH, acceptanceOutputByResult, artifactOutputByResult } from "./execution-helpers.ts";
 
 async function runSingleAttempt(
 	runtimeCwd: string,

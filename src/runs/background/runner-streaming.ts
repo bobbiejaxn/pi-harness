@@ -110,6 +110,7 @@ const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "S
 import {
 	emptyUsage,
 } from "./runner-utils.ts";
+import type { ChildEvent, ChildEventContext, RunPiStreamingResult, SingleStepContext } from "./runner-utils.ts";
 
 export function runPiStreaming(
 	args: string[],

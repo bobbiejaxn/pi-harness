@@ -24,7 +24,7 @@ export interface WorktreeInfo {
 	syntheticPaths: string[];
 }
 
-interface WorktreeDiff {
+export interface WorktreeDiff {
 	index: number;
 	agent: string;
 	branch: string;
@@ -46,7 +46,7 @@ interface WorktreeSetupHookConfig {
 	timeoutMs?: number;
 }
 
-interface CreateWorktreesOptions {
+export interface CreateWorktreesOptions {
 	agents?: string[];
 	setupHook?: WorktreeSetupHookConfig;
 }

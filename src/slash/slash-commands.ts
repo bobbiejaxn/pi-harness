@@ -37,6 +37,12 @@ import {
 	persistSlashSessionSnapshot,
 	makeAgentCompletions,
 	makeChainCompletions,
+	discoverSavedChains,
+	extractExecutionFlags,
+	mapSavedChainSteps,
+	parseAgentArgs,
+	parseAgentToken,
+	runSlashSubagent,
 } from "./slash-helpers.ts";
 
 export function registerSlashCommands(

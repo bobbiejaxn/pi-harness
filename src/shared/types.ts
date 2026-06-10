@@ -251,6 +251,14 @@ export interface ModelAttempt {
 }
 
 // Acceptance types extracted to acceptance-types.ts — re-export for backward compat
+import type {
+	AcceptanceLevel, AcceptanceEvidenceKind, AcceptanceGate, AcceptanceVerifyCommand,
+	AcceptanceReviewGate, AcceptanceConfig, AcceptanceInput,
+	ResolvedAcceptanceGate, ResolvedAcceptanceConfig, AcceptanceReport,
+	AcceptanceRuntimeCheckStatus, AcceptanceRuntimeCheck,
+	AcceptanceVerifyResult, AcceptanceReviewResult,
+	AcceptanceLedgerStatus, AcceptanceLedger,
+} from "./acceptance-types.ts";
 export type {
 	AcceptanceLevel, AcceptanceEvidenceKind, AcceptanceGate, AcceptanceVerifyCommand,
 	AcceptanceReviewGate, AcceptanceConfig, AcceptanceInput,
