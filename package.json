@@ -1,9 +1,11 @@
 {
   "name": "pi-harness",
-  "version": "1.1.0",
-  "description": "Production-hardened subagent execution engine for pi — circuit breaker, session learning, execution guard, domain enforcement, cost control",
+  "version": "1.2.0",
+  "description": "Production-hardened subagent execution engine for pi \u2014 circuit breaker, session learning, execution guard, domain enforcement, cost control",
   "author": "Bobbie Jackson",
-  "contributors": ["Nico Bailon"],
+  "contributors": [
+    "Nico Bailon"
+  ],
   "license": "MIT",
   "type": "module",
   "repository": {
