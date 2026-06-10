@@ -24,7 +24,7 @@ import type { Details } from "../shared/types.ts";
 
 export type ManagementAction = "list" | "get" | "create" | "update" | "delete";
 export type ManagementScope = "user" | "project";
-type ManagementContext = Pick<ExtensionContext, "cwd" | "modelRegistry">;
+export type ManagementContext = Pick<ExtensionContext, "cwd" | "modelRegistry">;
 
 export interface ManagementParams {
 	action?: string;
@@ -352,7 +352,7 @@ export function renamePath(
 	kind: "agent" | "chain",
 	currentPath: string,
 	newName: string,
-	scope: ManagementScope,
+	scope: ManagementScope | AgentSource,
 	cwd: string,
 ): { filePath?: string; error?: string } {
 	if (nameExistsInScope(cwd, scope, newName, currentPath)) return { error: `Name '${newName}' already exists in ${scope} scope.` };

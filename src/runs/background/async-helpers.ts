@@ -158,7 +158,7 @@ export interface AsyncSingleParams {
 	acceptance?: AcceptanceInput;
 }
 
-interface AsyncExecutionResult {
+export interface AsyncExecutionResult {
 	content: Array<{ type: "text"; text: string }>;
 	details: Details;
 	isError?: boolean;

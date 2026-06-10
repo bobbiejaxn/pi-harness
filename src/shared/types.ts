@@ -232,7 +232,7 @@ export interface ToolCallSummary {
 	expandedText: string;
 }
 
-interface ProgressSummary {
+interface ProgressSummary extends Partial<AgentProgress> {
 	toolCount: number;
 	tokens: number;
 	durationMs: number;

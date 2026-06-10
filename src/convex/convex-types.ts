@@ -106,6 +106,7 @@ export interface ConvexRun {
 // ── Query filters ───────────────────────────────────────────────────────────
 
 export interface EventFilter {
+	[key: string]: unknown;
 	type?: EventType;
 	project?: string;
 	severity?: EventSeverity;
@@ -115,6 +116,7 @@ export interface EventFilter {
 }
 
 export interface LessonFilter {
+	[key: string]: unknown;
 	tags?: string[];
 	severity?: LessonSeverity;
 	context?: string;
@@ -124,6 +126,7 @@ export interface LessonFilter {
 }
 
 export interface MemoryFilter {
+	[key: string]: unknown;
 	agent?: string;
 	project?: string;
 	category?: MemoryCategory;
@@ -133,6 +136,7 @@ export interface MemoryFilter {
 }
 
 export interface FactFilter {
+	[key: string]: unknown;
 	key?: string;
 	project?: string;
 	since?: number;
@@ -140,6 +144,7 @@ export interface FactFilter {
 }
 
 export interface RunFilter {
+	[key: string]: unknown;
 	runId?: string;
 	project?: string;
 	status?: RunStatus;
