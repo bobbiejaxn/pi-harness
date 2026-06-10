@@ -1,6 +1,6 @@
 {
   "name": "pi-harness",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Production-hardened subagent execution engine for pi \u2014 circuit breaker, session learning, execution guard, domain enforcement, cost control",
   "author": "Bobbie Jackson",
   "contributors": [
@@ -46,8 +46,8 @@
     "test:all": "npm run test:unit && npm run test:integration",
     "typecheck": "tsc --noEmit",
     "typecheck:ci": "tsc --noEmit || echo \"\u26a0\ufe0f  Type errors detected (non-blocking \u2014 runtime tests pass)\"",
-    "lint": "biome lint src/",
-    "lint:fix": "biome lint --write src/"
+    "lint": "npx @biomejs/biome lint src/",
+    "lint:fix": "npx @biomejs/biome lint --write src/"
   },
   "pi": {
     "extensions": [

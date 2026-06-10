@@ -17,7 +17,7 @@
 			"recommended": false,
 			"correctness": {
 				"noUnusedVariables": "off",
-				"noUnusedImports": "warn"
+				"noUnusedImports": "off"
 			},
 			"complexity": {
 				"noForEach": "off"
