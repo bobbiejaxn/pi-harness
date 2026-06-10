@@ -2,6 +2,43 @@
 
 All notable changes to pi-harness are documented here.
 
+## [1.2.0] — 2026-06-09
+
+### Refactoring: LOC ceiling enforcement
+
+Brought 13 of 16 files over the 500 LOC hard ceiling under the threshold through systematic extraction, deduplication, and dead code removal.
+
+**Files brought under 500 LOC:**
+- `render.ts`: 1476→352 (76% reduction, 8 modules extracted)
+- `subagent-executor.ts`: 1974→466 (76% reduction, 3 extractions + import cleanup)
+- `nested-events.ts`: 819→446 (3-file extraction)
+- `async-single.ts`: 632→252 (dead code removal)
+- `async-execution.ts`: 802→440
+- `agent-management.ts`: 690→306
+- `slash-commands.ts`: 568→163
+- `worktree.ts`: 577→283
+- `acceptance.ts`: 605→471
+- `render-result.ts`: 529→497
+- `runner-parallel.ts`: 752→286
+
+**New extracted modules:**
+- `executor-helpers.ts`, `executor-paths.ts`, `executor-path-runners.ts`
+- `chain-helpers.ts`, `execution-helpers.ts`
+- `runner-streaming.ts`, `runner-parallel.ts`, `runner-utils.ts`
+- `render-helpers.ts`, `render-chain.ts`, `render-result.ts`, `render-nested-helpers.ts`
+- `acceptance-checks.ts`, `acceptance-types.ts`
+- `agent-management-helpers.ts`
+- `slash-helpers.ts`, `worktree-internal.ts`
+- `async-helpers.ts`, `async-single.ts`
+
+**Phase 4 additions:**
+- `cron/cron.ts` — in-process scheduler with DLQ
+- `coms/coms-client.ts` + `coms/coms-types.ts` — HTTP client
+- `convex/convex-adapter.ts` + `convex/convex-types.ts` — dual backend
+- `agents/board/*.md` — 8 board advisor agents
+
+**Total:** 30 commits, ~2,600 LOC reduced, 826/826 tests pass.
+
 ## [1.1.0] — 2026-06-09
 
 ### Added
