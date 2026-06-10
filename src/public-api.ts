@@ -17,6 +17,8 @@
  * | `ComsClient` | HTTP client for coms-net peer network |
  * | `ConvexAdapter` | Typed persistence (Convex or local JSONL) |
  * | `TraceRecorder` | JSONL trace persistence for subagent events |
+ * | `runGates` | Acceptance gate runner |
+ * | `defaultNodeGates` | Default gate set for Node.js |
  */
 
 // ── Cron scheduler ──────────────────────────────────────────────────────────
@@ -70,4 +72,4 @@ export { TraceRecorder } from "./shared/trace-recorder.ts";
 
 // ── Acceptance gates ────────────────────────────────────────────────────────
 
-export { runAcceptanceGates } from "./runs/acceptance-gates.ts";
+export { runGates, defaultNodeGates } from "./runs/acceptance-gates.ts";
