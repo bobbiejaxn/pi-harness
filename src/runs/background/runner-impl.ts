@@ -1,0 +1,1343 @@
+/**
+ * Main subagent runner implementation — the runSubagent function.
+ * Extracted from subagent-runner.ts for maintainability.
+ */
+
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { writeAtomicJson } from "../../shared/atomic-json.ts";
+import { appendJsonl, getArtifactPaths } from "../../shared/artifacts.ts";
+import { PI_CODING_AGENT_PACKAGE, getPiSpawnCommand, resolveInstalledPiPackageRoot } from "../shared/pi-spawn.ts";
+import { captureSingleOutputSnapshot, finalizeSingleOutput, formatSavedOutputReference, resolveSingleOutput, type SingleOutputSnapshot } from "../shared/single-output.ts";
+import {
+	type ActivityState,
+	type ChainOutputMap,
+	type MaxOutputConfig,
+	type ArtifactConfig,
+	type ResolvedControlConfig,
+	type SubagentRunMode,
+	type WorkflowGraphSnapshot,
+	type NestedRouteInfo,
+	type ModelAttempt,
+	type ArtifactPaths,
+	type AcceptanceLedger,
+	type AsyncStatus,
+	DEFAULT_MAX_OUTPUT,
+	truncateOutput,
+} from "../../shared/types.ts";
+import {
+	DEFAULT_CONTROL_CONFIG,
+	buildControlEvent,
+	deriveActivityState,
+	claimControlNotification,
+	formatControlIntercomMessage,
+	formatControlNoticeMessage,
+} from "../shared/subagent-control.ts";
+import {
+	type RunnerSubagentStep as SubagentStep,
+	isDynamicRunnerGroup,
+	isParallelGroup,
+	flattenSteps,
+	mapConcurrent,
+	aggregateParallelOutputs,
+	MAX_PARALLEL_CONCURRENCY,
+	type RunnerStep,
+} from "../shared/parallel-utils.ts";
+import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
+import { outputEntryFromAsyncResult, resolveOutputReferences } from "../shared/chain-outputs.ts";
+import { createStructuredOutputRuntime, readStructuredOutput } from "../shared/structured-output.ts";
+import { collectDynamicResults, DynamicFanoutError, materializeDynamicParallelStep, validateDynamicCollection } from "../shared/dynamic-fanout.ts";
+import { nestedSummaryFromAsyncStatus, writeNestedEvent } from "../shared/nested-events.ts";
+import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model-fallback.ts";
+import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
+import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput } from "../../shared/utils.ts";
+import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
+import {
+	createMutatingFailureState,
+	didMutatingToolFail,
+	isMutatingTool,
+	nextLongRunningTrigger,
+	recordMutatingFailure,
+	resetMutatingFailureState,
+	resolveCurrentPath,
+	shouldEscalateMutatingFailures,
+	summarizeRecentMutatingFailures,
+} from "../shared/long-running-guard.ts";
+import { parseSessionTokens } from "../../shared/session-tokens.ts";
+import type { TokenUsage } from "../../shared/types.ts";
+import {
+	cleanupWorktrees,
+	createWorktrees,
+	findWorktreeTaskCwdConflict,
+	formatWorktreeTaskCwdConflict,
+	type WorktreeSetup,
+} from "../shared/worktree.ts";
+import { resolveEffectiveThinking } from "../../shared/model-info.ts";
+import { writeInitialProgressFile } from "../../shared/settings.ts";
+import { resolveSubagentIntercomTarget } from "../../intercom/intercom-bridge.ts";
+import { acceptanceFailureMessage, aggregateAcceptanceReport, evaluateAcceptance, formatAcceptancePrompt, stripAcceptanceReport } from "../shared/acceptance.ts";
+
+
+import {
+	findLatestSessionFile,
+	tokenUsageFromAttempts,
+	appendRecentStepOutput,
+	resetStepLiveDetail,
+	exportSessionHtml,
+	createShareLink,
+	writeRunLog,
+} from "./runner-utils.ts";
+import type { ChildEvent } from "./runner-utils.ts";
+
+// Streaming functions shared via runner-streaming.ts
+import {
+	runSingleStep,
+} from "./runner-streaming.ts";
+import { finalizeRun } from "./runner-finalize.ts";
+
+
+// Parallel group management extracted to runner-parallel.ts
+import {
+	markParallelGroupSetupFailure,
+	markParallelGroupRunning,
+	prepareParallelTaskRun,
+	appendParallelWorktreeSummary,
+	ensureParallelProgressFile,
+} from "./runner-parallel.ts";
+
+// Types from the shell module
+import type { SubagentRunConfig, StepResult, RunnerStatusStep } from "./subagent-runner.ts";
+import type { RunnerStatusPayload } from "./runner-parallel.ts";
+
+/** Signal used to request async interruption of the runner. */
+export const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
+
+export async function runSubagent(config: SubagentRunConfig): Promise<void> {
+	const { id, steps, resultPath, cwd, placeholder, taskIndex, totalTasks, maxOutput, artifactsDir, artifactConfig } =
+		config;
+	let previousOutput = "";
+	const outputs: ChainOutputMap = {};
+	const results: StepResult[] = [];
+	const overallStartTime = Date.now();
+	const shareEnabled = config.share === true;
+	const asyncDir = config.asyncDir;
+	const statusPath = path.join(asyncDir, "status.json");
+	const eventsPath = path.join(asyncDir, "events.jsonl");
+	const logPath = path.join(asyncDir, `subagent-log-${id}.md`);
+	const controlConfig = config.controlConfig ?? DEFAULT_CONTROL_CONFIG;
+	let activeChildInterrupt: (() => void) | undefined;
+	let interrupted = false;
+	let currentActivityState: ActivityState | undefined;
+	let activityTimer: NodeJS.Timeout | undefined;
+	let previousCumulativeTokens: TokenUsage = { input: 0, output: 0, total: 0 };
+	let latestSessionFile: string | undefined;
+
+	const parallelGroups: Array<{ start: number; count: number; stepIndex: number }> = [];
+	const initialStatusSteps: RunnerStatusStep[] = [];
+	let flatStepCount = 0;
+	for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+		const step = steps[stepIndex]!;
+		if (isParallelGroup(step)) {
+			parallelGroups.push({ start: flatStepCount, count: step.parallel.length, stepIndex });
+			for (const task of step.parallel) {
+				initialStatusSteps.push({
+					agent: task.agent,
+					phase: task.phase,
+					label: task.label,
+					outputName: task.outputName,
+					structured: task.structured,
+					status: "pending",
+					...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
+					skills: task.skills,
+					model: task.model,
+					thinking: task.thinking,
+					attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,
+					recentTools: [],
+					recentOutput: [],
+				});
+			}
+			flatStepCount += step.parallel.length;
+		} else if (isDynamicRunnerGroup(step)) {
+			parallelGroups.push({ start: flatStepCount, count: 1, stepIndex });
+			initialStatusSteps.push({
+				agent: `expand:${step.parallel.agent}`,
+				phase: step.phase ?? step.parallel.phase,
+				label: step.label ?? step.parallel.label ?? `Dynamic fanout (${step.collect.as})`,
+				outputName: step.collect.as,
+				structured: Boolean(step.collect.outputSchema),
+				status: "pending",
+				recentTools: [],
+				recentOutput: [],
+			});
+			flatStepCount++;
+		} else {
+			initialStatusSteps.push({
+				agent: step.agent,
+				phase: step.phase,
+				label: step.label,
+				outputName: step.outputName,
+				structured: step.structured,
+				status: "pending",
+				...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
+				skills: step.skills,
+				model: step.model,
+				thinking: step.thinking,
+				attemptedModels: step.modelCandidates && step.modelCandidates.length > 0 ? step.modelCandidates : step.model ? [step.model] : undefined,
+				recentTools: [],
+				recentOutput: [],
+			});
+			flatStepCount++;
+		}
+	}
+	const flatSteps = flattenSteps(steps);
+	const sessionEnabled = Boolean(config.sessionDir)
+		|| shareEnabled
+		|| flatSteps.some((step) => Boolean(step.sessionFile));
+	const statusPayload: RunnerStatusPayload = {
+		runId: id,
+		...(config.sessionId ? { sessionId: config.sessionId } : {}),
+		mode: config.resultMode ?? (flatSteps.length > 1 ? "chain" : "single"),
+		state: "running",
+		lastActivityAt: overallStartTime,
+		startedAt: overallStartTime,
+		lastUpdate: overallStartTime,
+		pid: process.pid,
+		cwd,
+		currentStep: 0,
+		chainStepCount: steps.length,
+		parallelGroups,
+		workflowGraph: config.workflowGraph,
+		steps: initialStatusSteps,
+		artifactsDir,
+		sessionDir: config.sessionDir,
+		outputFile: path.join(asyncDir, "output-0.log"),
+	};
+
+	fs.mkdirSync(asyncDir, { recursive: true });
+	writeAtomicJson(statusPath, statusPayload);
+	const emitNestedSelfEvent = (type: "subagent.nested.updated" | "subagent.nested.completed"): void => {
+		if (!config.nestedRoute || !config.nestedSelf) return;
+		try {
+			writeNestedEvent(config.nestedRoute, {
+				type,
+				ts: Date.now(),
+				parentRunId: config.nestedSelf.parentRunId,
+				parentStepIndex: config.nestedSelf.parentStepIndex,
+				child: nestedSummaryFromAsyncStatus(statusPayload, asyncDir, {
+					id,
+					parentRunId: config.nestedSelf.parentRunId,
+					parentStepIndex: config.nestedSelf.parentStepIndex,
+					depth: config.nestedSelf.depth,
+					path: config.nestedSelf.path,
+					mode: statusPayload.mode,
+					ts: Date.now(),
+				}),
+			});
+		} catch (error) {
+			console.error("Failed to emit nested async status event:", error);
+		}
+	};
+	const refreshWorkflowGraph = (): void => {
+		if (!config.workflowGraph) return;
+		const graph = structuredClone(statusPayload.workflowGraph ?? config.workflowGraph);
+		const normalize = (status: RunnerStatusStep["status"]): "pending" | "running" | "completed" | "failed" | "paused" | "detached" => {
+			if (status === "complete" || status === "completed") return "completed";
+			if (status === "running" || status === "failed" || status === "paused" || status === "pending") return status;
+			return "pending";
+		};
+		const updateNode = (node: NonNullable<typeof graph.nodes>[number]): void => {
+			if (node.flatIndex !== undefined) {
+				const step = statusPayload.steps[node.flatIndex];
+				if (step) {
+					node.status = normalize(step.status);
+					node.error = step.error;
+					node.acceptanceStatus = step.acceptance?.status;
+				}
+				if (statusPayload.currentStep === node.flatIndex) graph.currentNodeId = node.id;
+			}
+			for (const child of node.children ?? []) updateNode(child);
+			if (node.children?.length) {
+				if (node.children.every((child) => child.status === "completed")) node.status = "completed";
+				else if (node.children.some((child) => child.status === "running")) node.status = "running";
+				else if (node.children.some((child) => child.status === "failed")) node.status = "failed";
+				else if (node.children.some((child) => child.status === "paused")) node.status = "paused";
+			}
+			if (node.error) node.status = "failed";
+		};
+		for (const node of graph.nodes) updateNode(node);
+		statusPayload.workflowGraph = graph;
+	};
+	const writeStatusPayload = (): void => {
+		refreshWorkflowGraph();
+		writeAtomicJson(statusPath, statusPayload);
+		emitNestedSelfEvent(statusPayload.state === "running" || statusPayload.state === "queued" ? "subagent.nested.updated" : "subagent.nested.completed");
+	};
+	const markDynamicGraphGroup = (stepIndex: number, status: "completed" | "failed" | "running", error?: string, acceptance?: import("../../shared/types.ts").AcceptanceLedger): void => {
+		const groupNode = statusPayload.workflowGraph?.nodes.find((node) => node.id === `step-${stepIndex}`);
+		if (!groupNode) return;
+		groupNode.status = status;
+		groupNode.error = error;
+		groupNode.acceptanceStatus = acceptance?.status ?? groupNode.acceptanceStatus;
+	};
+
+	const stepOutputActivityAt = (index: number): number => {
+		const step = statusPayload.steps[index];
+		let lastActivityAt = step?.lastActivityAt ?? step?.startedAt ?? overallStartTime;
+		const outputPath = path.join(asyncDir, `output-${index}.log`);
+		try {
+			lastActivityAt = Math.max(lastActivityAt, fs.statSync(outputPath).mtimeMs);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				console.error(`Failed to inspect async output file '${outputPath}':`, error);
+			}
+		}
+		return lastActivityAt;
+	};
+	const emittedControlEventKeys = new Set<string>();
+	const activeLongRunningSteps = new Set<number>();
+	const mutatingFailureStates = initialStatusSteps.map(() => createMutatingFailureState());
+	const pendingToolResults: Array<{ tool: string; path?: string; mutates: boolean; startedAt?: number } | undefined> = initialStatusSteps.map(() => undefined);
+	const mutatingFailureWindowMs = 5 * 60_000;
+	const appendControlEvent = (event: ReturnType<typeof buildControlEvent>) => {
+		if (!controlConfig.enabled) return;
+		const childIntercomTarget = config.childIntercomTargets?.[event.index ?? statusPayload.currentStep];
+		const channels = event.type === "active_long_running"
+			? controlConfig.notifyChannels.filter((channel) => channel !== "intercom")
+			: controlConfig.notifyChannels;
+		if (channels.length === 0 || !claimControlNotification(controlConfig, event, emittedControlEventKeys, childIntercomTarget)) return;
+		appendJsonl(eventsPath, JSON.stringify({
+			type: "subagent.control",
+			event,
+			channels,
+			childIntercomTarget,
+			noticeText: formatControlNoticeMessage(event, childIntercomTarget),
+			...(config.controlIntercomTarget && channels.includes("intercom") ? {
+				intercom: {
+					to: config.controlIntercomTarget,
+					message: formatControlIntercomMessage(event, childIntercomTarget),
+				},
+			} : {}),
+		}));
+	};
+	const syncTopLevelCurrentTool = (): void => {
+		const activeStep = statusPayload.steps
+			.filter((step) => step.status === "running" && typeof step.currentTool === "string" && step.currentTool.length > 0)
+			.sort((left, right) => (right.currentToolStartedAt ?? 0) - (left.currentToolStartedAt ?? 0))[0];
+		statusPayload.currentTool = activeStep?.currentTool;
+		statusPayload.currentToolStartedAt = activeStep?.currentToolStartedAt;
+		statusPayload.currentPath = activeStep?.currentPath;
+	};
+	const maybeEmitActiveLongRunning = (flatIndex: number, now: number): boolean => {
+		if (!controlConfig.enabled || activeLongRunningSteps.has(flatIndex)) return false;
+		const step = statusPayload.steps[flatIndex];
+		if (!step || step.status !== "running" || step.activityState === "needs_attention") return false;
+		const reason = nextLongRunningTrigger(controlConfig, {
+			startedAt: step.startedAt ?? overallStartTime,
+			now,
+			turns: step.turnCount ?? 0,
+			tokens: step.tokens?.total ?? 0,
+		});
+		if (!reason) return false;
+		activeLongRunningSteps.add(flatIndex);
+		const previous = step.activityState;
+		step.activityState = "active_long_running";
+		statusPayload.activityState = statusPayload.activityState === "needs_attention" ? "needs_attention" : "active_long_running";
+		const event = buildControlEvent({
+			type: "active_long_running",
+			from: previous,
+			to: "active_long_running",
+			runId: id,
+			agent: step.agent,
+			index: flatIndex,
+			ts: now,
+			message: `${step.agent} is still active but long-running`,
+			reason,
+			turns: step.turnCount,
+			tokens: step.tokens?.total,
+			toolCount: step.toolCount,
+			currentTool: step.currentTool,
+			currentToolDurationMs: step.currentToolStartedAt ? Math.max(0, now - step.currentToolStartedAt) : undefined,
+			currentPath: step.currentPath,
+			elapsedMs: now - (step.startedAt ?? overallStartTime),
+		});
+		appendControlEvent(event);
+		return true;
+	};
+	const updateStepModel = (flatIndex: number, model: string | undefined, thinking: string | undefined, now = Date.now()): void => {
+		const step = statusPayload.steps[flatIndex];
+		if (!step) return;
+		step.model = model;
+		step.thinking = thinking;
+		statusPayload.lastUpdate = now;
+		writeStatusPayload();
+	};
+	const updateStepFromChildEvent = (flatIndex: number, event: ChildEvent): void => {
+		const step = statusPayload.steps[flatIndex];
+		if (!step) return;
+		const now = Date.now();
+		statusPayload.currentStep = flatIndex;
+		if (event.type === "tool_execution_start" && event.toolName) {
+			const mutates = isMutatingTool(event.toolName, event.args);
+			const currentPath = resolveCurrentPath(event.toolName, event.args);
+			step.toolCount = (step.toolCount ?? 0) + 1;
+			step.currentTool = event.toolName;
+			step.currentToolArgs = extractToolArgsPreview(event.args ?? {});
+			step.currentToolStartedAt = now;
+			step.currentPath = currentPath;
+			pendingToolResults[flatIndex] = { tool: event.toolName, path: currentPath, mutates, startedAt: now };
+			statusPayload.toolCount = (statusPayload.toolCount ?? 0) + 1;
+			syncTopLevelCurrentTool();
+		} else if (event.type === "tool_execution_end") {
+			if (step.currentTool) {
+				step.recentTools ??= [];
+				step.recentTools.push({ tool: step.currentTool, args: step.currentToolArgs || "", endMs: now });
+			}
+			step.currentTool = undefined;
+			step.currentToolArgs = undefined;
+			step.currentToolStartedAt = undefined;
+			step.currentPath = undefined;
+			syncTopLevelCurrentTool();
+		} else if (event.type === "tool_result_end" && event.message) {
+			const toolSnapshot = pendingToolResults[flatIndex];
+			pendingToolResults[flatIndex] = undefined;
+			const resultText = extractTextFromContent(event.message.content);
+			appendRecentStepOutput(step, resultText.split("\n").slice(-10));
+			if (toolSnapshot?.mutates && didMutatingToolFail(resultText)) {
+				const state = mutatingFailureStates[flatIndex]!;
+				recordMutatingFailure(state, {
+					tool: toolSnapshot.tool,
+					path: toolSnapshot.path,
+					error: resultText.split("\n").find((line) => line.trim())?.trim().slice(0, 180) ?? "mutating tool failed",
+					ts: now,
+				}, mutatingFailureWindowMs);
+				if (controlConfig.enabled && shouldEscalateMutatingFailures(state, controlConfig.failedToolAttemptsBeforeAttention) && step.activityState !== "needs_attention") {
+					const previous = step.activityState;
+					step.activityState = "needs_attention";
+					statusPayload.activityState = "needs_attention";
+					appendControlEvent(buildControlEvent({
+						type: "needs_attention",
+						from: previous,
+						to: "needs_attention",
+						runId: id,
+						agent: step.agent,
+						index: flatIndex,
+						ts: now,
+						message: `${step.agent} needs attention after repeated mutating tool failures`,
+						reason: "tool_failures",
+						turns: step.turnCount,
+						tokens: step.tokens?.total,
+						toolCount: step.toolCount,
+						currentTool: toolSnapshot.tool,
+						currentToolDurationMs: toolSnapshot.startedAt ? Math.max(0, now - toolSnapshot.startedAt) : undefined,
+						currentPath: toolSnapshot.path,
+						recentFailureSummary: summarizeRecentMutatingFailures(state),
+					}));
+				}
+			} else if (toolSnapshot?.mutates) {
+				resetMutatingFailureState(mutatingFailureStates[flatIndex]!);
+			}
+		} else if (event.type === "message_end" && event.message?.role === "assistant") {
+			appendRecentStepOutput(step, stripAcceptanceReport(extractTextFromContent(event.message.content)).split("\n").slice(-10));
+			step.turnCount = (step.turnCount ?? 0) + 1;
+			const usage = event.message.usage;
+			if (usage) {
+				const input = usage.input ?? usage.inputTokens ?? 0;
+				const output = usage.output ?? usage.outputTokens ?? 0;
+				const previousInput = step.tokens?.input ?? 0;
+				const previousOutput = step.tokens?.output ?? 0;
+				step.tokens = { input: previousInput + input, output: previousOutput + output, total: previousInput + previousOutput + input + output };
+				const totalInput = statusPayload.totalTokens?.input ?? 0;
+				const totalOutput = statusPayload.totalTokens?.output ?? 0;
+				statusPayload.totalTokens = { input: totalInput + input, output: totalOutput + output, total: totalInput + totalOutput + input + output };
+			}
+			statusPayload.turnCount = Math.max(statusPayload.turnCount ?? 0, step.turnCount);
+		}
+		syncTopLevelCurrentTool();
+		step.lastActivityAt = now;
+		statusPayload.lastActivityAt = now;
+		statusPayload.lastUpdate = now;
+		maybeEmitActiveLongRunning(flatIndex, now);
+		writeStatusPayload();
+	};
+	const updateRunnerActivityState = (now: number): boolean => {
+		if (!controlConfig.enabled) return false;
+		let changed = false;
+		let runLastActivityAt = statusPayload.lastActivityAt ?? overallStartTime;
+		for (let index = 0; index < statusPayload.steps.length; index++) {
+			const step = statusPayload.steps[index]!;
+			if (step.status !== "running") continue;
+			const lastActivityAt = stepOutputActivityAt(index);
+			runLastActivityAt = Math.max(runLastActivityAt, lastActivityAt);
+			if (step.lastActivityAt !== lastActivityAt) {
+				step.lastActivityAt = lastActivityAt;
+				changed = true;
+			}
+			const idleState = deriveActivityState({
+				config: controlConfig,
+				startedAt: step.startedAt ?? overallStartTime,
+				lastActivityAt,
+				now,
+			});
+			if (idleState === "needs_attention") {
+				const previous = step.activityState;
+				step.activityState = "needs_attention";
+				if (previous !== "needs_attention") {
+					appendControlEvent(buildControlEvent({
+						from: previous,
+						to: "needs_attention",
+						runId: id,
+						agent: step.agent,
+						index,
+						ts: now,
+						lastActivityAt,
+					}));
+					changed = true;
+				}
+			} else if (maybeEmitActiveLongRunning(index, now)) {
+				changed = true;
+			}
+		}
+		if (statusPayload.lastActivityAt !== runLastActivityAt) {
+			statusPayload.lastActivityAt = runLastActivityAt;
+			changed = true;
+		}
+		const nextRunState = statusPayload.steps.some((step) => step.activityState === "needs_attention")
+			? "needs_attention"
+			: statusPayload.steps.some((step) => step.activityState === "active_long_running")
+				? "active_long_running"
+				: undefined;
+		if (nextRunState !== currentActivityState) {
+			currentActivityState = nextRunState;
+			statusPayload.activityState = nextRunState;
+			changed = true;
+		}
+		statusPayload.lastUpdate = now;
+		if (changed) writeStatusPayload();
+		return changed;
+	};
+	if (controlConfig.enabled) {
+		activityTimer = setInterval(() => {
+			if (statusPayload.state !== "running") return;
+			const now = Date.now();
+			updateRunnerActivityState(now);
+		}, 1000);
+		activityTimer.unref?.();
+	}
+
+	const interruptRunner = () => {
+		if (interrupted || statusPayload.state !== "running") return;
+		interrupted = true;
+		const now = Date.now();
+		statusPayload.state = "paused";
+		currentActivityState = undefined;
+		statusPayload.activityState = undefined;
+		statusPayload.lastUpdate = now;
+		for (const step of statusPayload.steps) {
+			if (step.status === "running") {
+				step.status = "paused";
+				step.activityState = undefined;
+				step.endedAt = now;
+				step.durationMs = step.startedAt ? now - step.startedAt : undefined;
+				step.lastActivityAt = now;
+			}
+		}
+		writeStatusPayload();
+		appendJsonl(eventsPath, JSON.stringify({
+			type: "subagent.run.paused",
+			ts: now,
+			runId: id,
+		}));
+		activeChildInterrupt?.();
+	};
+	process.on(ASYNC_INTERRUPT_SIGNAL, interruptRunner);
+	appendJsonl(
+		eventsPath,
+		JSON.stringify({
+			type: "subagent.run.started",
+			ts: overallStartTime,
+			runId: id,
+			mode: statusPayload.mode,
+			cwd,
+			pid: process.pid,
+		}),
+	);
+
+	let flatIndex = 0;
+
+	for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+		if (interrupted) break;
+		const step = steps[stepIndex];
+
+		if (isDynamicRunnerGroup(step)) {
+			const groupStartFlatIndex = flatIndex;
+			let materialized: ReturnType<typeof materializeDynamicParallelStep>;
+			try {
+				materialized = materializeDynamicParallelStep(step as Parameters<typeof materializeDynamicParallelStep>[0], outputs, stepIndex, { maxItems: config.dynamicFanoutMaxItems, allowRunnerFields: true });
+				if (materialized.collectedOnEmpty) validateDynamicCollection(step.collect.outputSchema, materialized.collectedOnEmpty);
+			} catch (error) {
+				const now = Date.now();
+				const message = error instanceof DynamicFanoutError ? error.message : error instanceof Error ? error.message : String(error);
+				statusPayload.state = "failed";
+				statusPayload.error = message;
+				statusPayload.currentStep = flatIndex;
+				const placeholder = statusPayload.steps[groupStartFlatIndex];
+				if (placeholder) {
+					placeholder.status = "failed";
+					placeholder.error = message;
+					placeholder.startedAt = now;
+					placeholder.endedAt = now;
+					placeholder.durationMs = 0;
+					placeholder.exitCode = 1;
+				}
+				statusPayload.lastUpdate = now;
+				markDynamicGraphGroup(stepIndex, "failed", message);
+				writeStatusPayload();
+				results.push({ agent: step.parallel.agent, output: message, error: message, success: false, exitCode: 1 });
+				break;
+			}
+
+			if (materialized.parallel.length === 0) {
+				const now = Date.now();
+				const collection = materialized.collectedOnEmpty ?? [];
+				outputs[step.collect.as] = {
+					text: JSON.stringify(collection),
+					structured: collection,
+					agent: step.parallel.agent,
+					stepIndex,
+				};
+				statusPayload.outputs = outputs;
+				const placeholder = statusPayload.steps[groupStartFlatIndex];
+				if (placeholder) {
+					placeholder.status = "complete";
+					placeholder.startedAt = now;
+					placeholder.endedAt = now;
+					placeholder.durationMs = 0;
+				}
+				previousOutput = "Dynamic fanout produced 0 results.";
+				const groupAcceptance = step.effectiveAcceptance?.explicit
+					? await evaluateAcceptance({
+						acceptance: step.effectiveAcceptance,
+						output: "",
+						report: aggregateAcceptanceReport({
+							results: [],
+							notes: "Dynamic fanout produced 0 results.",
+						}),
+						cwd,
+					})
+					: undefined;
+				if (placeholder && groupAcceptance) placeholder.acceptance = groupAcceptance;
+				const groupAcceptanceFailure = groupAcceptance ? acceptanceFailureMessage(groupAcceptance) : undefined;
+				if (groupAcceptanceFailure) {
+					statusPayload.state = "failed";
+					statusPayload.error = groupAcceptanceFailure;
+					if (placeholder) {
+						placeholder.status = "failed";
+						placeholder.error = groupAcceptanceFailure;
+						placeholder.exitCode = 1;
+					}
+					markDynamicGraphGroup(stepIndex, "failed", groupAcceptanceFailure, groupAcceptance);
+					statusPayload.lastUpdate = now;
+					writeStatusPayload();
+					results.push({ agent: step.parallel.agent, output: groupAcceptanceFailure, error: groupAcceptanceFailure, success: false, exitCode: 1, acceptance: groupAcceptance });
+					break;
+				}
+				flatIndex++;
+				statusPayload.lastUpdate = now;
+				markDynamicGraphGroup(stepIndex, "completed", undefined, groupAcceptance);
+				writeStatusPayload();
+				continue;
+			}
+
+			const dynamicSteps = materialized.parallel.map((task, itemIndex) => ({
+				...step.parallel,
+				task: task.task ?? step.parallel.task,
+				label: task.label ?? step.parallel.label,
+				structuredOutput: undefined,
+				structuredOutputSchema: step.parallel.structuredOutputSchema ?? step.parallel.structuredOutput?.schema,
+			}));
+			const dynamicStatusSteps: RunnerStatusStep[] = dynamicSteps.map((task) => ({
+					agent: task.agent,
+					phase: task.phase ?? step.phase,
+					label: task.label,
+					outputName: undefined,
+					structured: Boolean(task.structuredOutputSchema),
+					status: "pending",
+					...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
+					skills: task.skills,
+					model: task.model,
+					thinking: task.thinking,
+					attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,
+					recentTools: [],
+					recentOutput: [],
+				}));
+			statusPayload.steps.splice(groupStartFlatIndex, 1, ...dynamicStatusSteps);
+			if (config.childIntercomTargets) {
+				config.childIntercomTargets = statusPayload.steps.map((statusStep, index) => resolveSubagentIntercomTarget(id, statusStep.agent, index));
+			}
+			mutatingFailureStates.splice(groupStartFlatIndex, 1, ...dynamicStatusSteps.map(() => createMutatingFailureState()));
+			pendingToolResults.splice(groupStartFlatIndex, 1, ...dynamicStatusSteps.map(() => undefined));
+			const materializedDelta = dynamicStatusSteps.length - 1;
+			for (const group of statusPayload.parallelGroups) {
+				if (group.stepIndex === stepIndex) {
+					group.start = groupStartFlatIndex;
+					group.count = dynamicStatusSteps.length;
+				} else if (group.start > groupStartFlatIndex) {
+					group.start += materializedDelta;
+				}
+			}
+			if (statusPayload.workflowGraph) {
+				const shiftFlatIndexes = (nodes: NonNullable<typeof statusPayload.workflowGraph>["nodes"]): void => {
+					for (const node of nodes) {
+						if (node.stepIndex !== undefined && node.stepIndex > stepIndex && node.flatIndex !== undefined && node.flatIndex >= groupStartFlatIndex) {
+							node.flatIndex += dynamicStatusSteps.length;
+						}
+						if (node.children) shiftFlatIndexes(node.children);
+					}
+				};
+				shiftFlatIndexes(statusPayload.workflowGraph.nodes);
+				const groupNode = statusPayload.workflowGraph.nodes.find((node) => node.id === `step-${stepIndex}`);
+				if (groupNode) {
+					groupNode.children = materialized.items.map((item, itemIndex) => ({
+						id: `step-${stepIndex}-item-${item.idKey}`,
+						kind: "agent",
+						agent: step.parallel.agent,
+						phase: dynamicSteps[itemIndex]?.phase ?? step.phase,
+						label: dynamicSteps[itemIndex]?.label?.trim() || `${step.parallel.agent} ${item.key}`,
+						status: "pending",
+						flatIndex: groupStartFlatIndex + itemIndex,
+						stepIndex,
+						itemKey: item.key,
+						structured: Boolean(dynamicSteps[itemIndex]?.structuredOutputSchema),
+					}));
+				}
+			}
+			writeStatusPayload();
+
+			const concurrency = step.concurrency ?? MAX_PARALLEL_CONCURRENCY;
+			const failFast = step.failFast ?? false;
+			let aborted = false;
+			const parallelResults = await mapConcurrent(dynamicSteps, concurrency, async (task, taskIdx) => {
+				const fi = groupStartFlatIndex + taskIdx;
+				if (aborted && failFast) {
+					const skippedAt = Date.now();
+					statusPayload.steps[fi].status = "failed";
+					statusPayload.steps[fi].error = "Skipped due to fail-fast";
+					statusPayload.steps[fi].startedAt = skippedAt;
+					statusPayload.steps[fi].endedAt = skippedAt;
+					statusPayload.steps[fi].durationMs = 0;
+					statusPayload.steps[fi].exitCode = -1;
+					statusPayload.lastUpdate = skippedAt;
+					writeStatusPayload();
+					return { agent: task.agent, output: "(skipped — fail-fast)", exitCode: -1 as number | null, skipped: true };
+				}
+				const taskStartTime = Date.now();
+				statusPayload.currentStep = fi;
+				statusPayload.steps[fi].status = "running";
+				statusPayload.steps[fi].error = undefined;
+				statusPayload.steps[fi].activityState = undefined;
+				resetStepLiveDetail(statusPayload.steps[fi]);
+				statusPayload.steps[fi].startedAt = taskStartTime;
+				statusPayload.steps[fi].lastActivityAt = taskStartTime;
+				statusPayload.outputFile = path.join(asyncDir, `output-${fi}.log`);
+				statusPayload.lastActivityAt = taskStartTime;
+				statusPayload.lastUpdate = taskStartTime;
+				writeStatusPayload();
+				appendJsonl(eventsPath, JSON.stringify({ type: "subagent.step.started", ts: taskStartTime, runId: id, stepIndex: fi, agent: task.agent }));
+				const singleResult = await runSingleStep(task, {
+					previousOutput, placeholder, cwd, sessionEnabled,
+					outputs,
+					sessionDir: config.sessionDir ? path.join(config.sessionDir, `dynamic-${stepIndex}-${taskIdx}`) : undefined,
+					artifactsDir, artifactConfig, id,
+					flatIndex: fi, flatStepCount: Math.max(statusPayload.steps.length, 1),
+					outputFile: path.join(asyncDir, `output-${fi}.log`),
+					piPackageRoot: config.piPackageRoot,
+					piArgv1: config.piArgv1,
+					childIntercomTarget: config.childIntercomTargets?.[fi],
+					orchestratorIntercomTarget: config.controlIntercomTarget,
+					nestedRoute: config.nestedRoute,
+					registerInterrupt: (interrupt) => {
+						activeChildInterrupt = interrupt;
+					},
+					onAttemptStart: (attempt) => updateStepModel(fi, attempt.model, attempt.thinking),
+					onChildEvent: (event) => updateStepFromChildEvent(fi, event),
+				});
+				const taskEndTime = Date.now();
+				statusPayload.steps[fi].status = singleResult.exitCode === 0 ? "complete" : "failed";
+				statusPayload.steps[fi].endedAt = taskEndTime;
+				statusPayload.steps[fi].durationMs = taskEndTime - taskStartTime;
+				statusPayload.steps[fi].exitCode = singleResult.exitCode;
+				statusPayload.steps[fi].model = singleResult.model;
+				statusPayload.steps[fi].thinking = resolveEffectiveThinking(singleResult.model, statusPayload.steps[fi].thinking);
+				statusPayload.steps[fi].attemptedModels = singleResult.attemptedModels;
+				statusPayload.steps[fi].modelAttempts = singleResult.modelAttempts;
+				statusPayload.steps[fi].error = singleResult.error;
+				statusPayload.steps[fi].structuredOutput = singleResult.structuredOutput;
+				statusPayload.steps[fi].structuredOutputPath = singleResult.structuredOutputPath;
+				statusPayload.steps[fi].structuredOutputSchemaPath = singleResult.structuredOutputSchemaPath;
+				statusPayload.steps[fi].acceptance = singleResult.acceptance;
+				statusPayload.lastUpdate = taskEndTime;
+				writeStatusPayload();
+				appendJsonl(eventsPath, JSON.stringify({
+					type: singleResult.exitCode === 0 ? "subagent.step.completed" : "subagent.step.failed",
+					ts: taskEndTime, runId: id, stepIndex: fi, agent: task.agent,
+					exitCode: singleResult.exitCode, durationMs: taskEndTime - taskStartTime,
+				}));
+				if (singleResult.exitCode !== 0 && failFast) aborted = true;
+				return { ...singleResult, skipped: false };
+			});
+
+			flatIndex += dynamicSteps.length;
+			for (const pr of parallelResults) {
+				results.push({
+					agent: pr.agent,
+					output: pr.output,
+					error: pr.error,
+					success: pr.exitCode === 0,
+					exitCode: pr.exitCode,
+					skipped: pr.skipped,
+					sessionFile: pr.sessionFile,
+					intercomTarget: pr.intercomTarget,
+					model: pr.model,
+					attemptedModels: pr.attemptedModels,
+					modelAttempts: pr.modelAttempts,
+					artifactPaths: pr.artifactPaths,
+					structuredOutput: pr.structuredOutput,
+					structuredOutputPath: pr.structuredOutputPath,
+					structuredOutputSchemaPath: pr.structuredOutputSchemaPath,
+					acceptance: pr.acceptance,
+				});
+			}
+			const collection = collectDynamicResults(step as Parameters<typeof collectDynamicResults>[0], materialized.items, parallelResults);
+			const failures = parallelResults.filter((result) => result.exitCode !== 0 && result.exitCode !== -1);
+			if (failures.length === 0) {
+				try {
+					validateDynamicCollection(step.collect.outputSchema, collection);
+					outputs[step.collect.as] = {
+						text: JSON.stringify(collection),
+						structured: collection,
+						agent: step.parallel.agent,
+						stepIndex,
+					};
+					statusPayload.outputs = outputs;
+					const groupAcceptance = step.effectiveAcceptance
+						? await evaluateAcceptance({
+							acceptance: step.effectiveAcceptance,
+							output: "",
+							report: aggregateAcceptanceReport({
+								results: parallelResults,
+								notes: `Dynamic fanout collected ${collection.length} result(s) into ${step.collect.as}.`,
+							}),
+							cwd,
+						})
+						: undefined;
+					const groupAcceptanceFailure = groupAcceptance ? acceptanceFailureMessage(groupAcceptance) : undefined;
+					markDynamicGraphGroup(stepIndex, groupAcceptanceFailure ? "failed" : "completed", groupAcceptanceFailure, groupAcceptance);
+					if (groupAcceptanceFailure) {
+						results.push({
+							agent: step.parallel.agent,
+							output: groupAcceptanceFailure,
+							error: groupAcceptanceFailure,
+							success: false,
+							exitCode: 1,
+							structuredOutput: collection,
+							acceptance: groupAcceptance,
+						});
+						statusPayload.error = groupAcceptanceFailure;
+					}
+				} catch (error) {
+					const message = error instanceof DynamicFanoutError ? error.message : error instanceof Error ? error.message : String(error);
+					results.push({ agent: step.parallel.agent, output: message, error: message, success: false, exitCode: 1, structuredOutput: collection });
+					statusPayload.error = message;
+					markDynamicGraphGroup(stepIndex, "failed", message);
+				}
+			}
+			previousOutput = aggregateParallelOutputs(
+				parallelResults.map((r, i) => ({
+					agent: r.agent,
+					taskIndex: i,
+					output: r.output,
+					exitCode: r.exitCode,
+					error: r.error,
+				})),
+				(i, agent) => `=== Dynamic Item ${i + 1} (${agent}, key ${materialized.items[i]?.key ?? i}) ===`,
+			);
+			appendJsonl(eventsPath, JSON.stringify({
+				type: "subagent.dynamic.completed",
+				ts: Date.now(),
+				runId: id,
+				stepIndex,
+				success: failures.length === 0,
+			}));
+			if (failures.length > 0) markDynamicGraphGroup(stepIndex, "failed", failures[0]?.error ?? "Dynamic fanout child failed.");
+			statusPayload.lastUpdate = Date.now();
+			writeStatusPayload();
+			if (failures.length > 0 || statusPayload.error) break;
+			continue;
+		}
+
+		if (isParallelGroup(step)) {
+			const group = step;
+			const concurrency = group.concurrency ?? MAX_PARALLEL_CONCURRENCY;
+			const failFast = group.failFast ?? false;
+			const groupStartFlatIndex = flatIndex;
+			let aborted = false;
+			let worktreeSetup: WorktreeSetup | undefined;
+			if (group.worktree) {
+				const worktreeTaskCwdConflict = findWorktreeTaskCwdConflict(group.parallel, cwd);
+				if (worktreeTaskCwdConflict) {
+					const failedAt = Date.now();
+					markParallelGroupSetupFailure({
+						statusPayload,
+						results,
+						group,
+						groupStartFlatIndex,
+						setupError: formatWorktreeTaskCwdConflict(worktreeTaskCwdConflict, cwd),
+						failedAt,
+						statusPath,
+						eventsPath,
+						asyncDir,
+						runId: id,
+						stepIndex,
+					});
+					flatIndex += group.parallel.length;
+					break;
+				}
+				try {
+					worktreeSetup = createWorktrees(cwd, `${id}-s${stepIndex}`, group.parallel.length, {
+						agents: group.parallel.map((task) => task.agent),
+						setupHook: config.worktreeSetupHook
+							? { hookPath: config.worktreeSetupHook, timeoutMs: config.worktreeSetupHookTimeoutMs }
+							: undefined,
+					});
+				} catch (error) {
+					const setupError = error instanceof Error ? error.message : String(error);
+					const failedAt = Date.now();
+					markParallelGroupSetupFailure({
+						statusPayload,
+						results,
+						group,
+						groupStartFlatIndex,
+						setupError,
+						failedAt,
+						statusPath,
+						eventsPath,
+						asyncDir,
+						runId: id,
+						stepIndex,
+					});
+					flatIndex += group.parallel.length;
+					break;
+				}
+			}
+
+			try {
+				if (group.worktree) ensureParallelProgressFile(cwd, group);
+				const groupStartTime = Date.now();
+				markParallelGroupRunning({
+					statusPayload,
+					group,
+					groupStartFlatIndex,
+					groupStartTime,
+					statusPath,
+					eventsPath,
+					asyncDir,
+					runId: id,
+					stepIndex,
+				});
+				const parallelResults = await mapConcurrent(
+					group.parallel,
+					concurrency,
+					async (task, taskIdx) => {
+						const fi = groupStartFlatIndex + taskIdx;
+						if (aborted && failFast) {
+							const skippedAt = Date.now();
+							statusPayload.steps[fi].status = "failed";
+							statusPayload.steps[fi].error = "Skipped due to fail-fast";
+							statusPayload.steps[fi].startedAt = skippedAt;
+							statusPayload.steps[fi].endedAt = skippedAt;
+							statusPayload.steps[fi].durationMs = 0;
+							statusPayload.steps[fi].exitCode = -1;
+							statusPayload.steps[fi].activityState = undefined;
+							statusPayload.lastUpdate = skippedAt;
+							writeStatusPayload();
+							appendJsonl(eventsPath, JSON.stringify({
+								type: "subagent.step.failed", ts: skippedAt, runId: id, stepIndex: fi, agent: task.agent, exitCode: -1, durationMs: 0,
+							}));
+							return { agent: task.agent, output: "(skipped — fail-fast)", exitCode: -1 as number | null, skipped: true };
+						}
+
+						const taskStartTime = Date.now();
+						statusPayload.currentStep = fi;
+						statusPayload.steps[fi].status = "running";
+						statusPayload.steps[fi].error = undefined;
+						statusPayload.steps[fi].activityState = undefined;
+						resetStepLiveDetail(statusPayload.steps[fi]);
+						statusPayload.steps[fi].startedAt = taskStartTime;
+						statusPayload.steps[fi].endedAt = undefined;
+						statusPayload.steps[fi].durationMs = undefined;
+						statusPayload.steps[fi].lastActivityAt = taskStartTime;
+						statusPayload.outputFile = path.join(asyncDir, `output-${fi}.log`);
+						statusPayload.lastActivityAt = taskStartTime;
+						statusPayload.lastUpdate = taskStartTime;
+						writeStatusPayload();
+
+						appendJsonl(eventsPath, JSON.stringify({
+							type: "subagent.step.started", ts: taskStartTime, runId: id, stepIndex: fi, agent: task.agent,
+						}));
+
+						const taskSessionDir = config.sessionDir
+							? path.join(config.sessionDir, `parallel-${taskIdx}`)
+							: undefined;
+						const { taskForRun, taskCwd } = prepareParallelTaskRun(task, cwd, worktreeSetup, taskIdx);
+
+						const singleResult = await runSingleStep(taskForRun, {
+							previousOutput, placeholder, cwd: taskCwd, sessionEnabled,
+							outputs,
+							sessionDir: taskSessionDir,
+							artifactsDir, artifactConfig, id,
+							flatIndex: fi, flatStepCount: flatSteps.length,
+							outputFile: path.join(asyncDir, `output-${fi}.log`),
+							piPackageRoot: config.piPackageRoot,
+							piArgv1: config.piArgv1,
+							childIntercomTarget: config.childIntercomTargets?.[fi],
+							orchestratorIntercomTarget: config.controlIntercomTarget,
+							nestedRoute: config.nestedRoute,
+							registerInterrupt: (interrupt) => {
+								activeChildInterrupt = interrupt;
+							},
+							onAttemptStart: (attempt) => updateStepModel(fi, attempt.model, attempt.thinking),
+							onChildEvent: (event) => updateStepFromChildEvent(fi, event),
+						});
+						if (task.sessionFile) {
+							latestSessionFile = task.sessionFile;
+						}
+
+						const taskEndTime = Date.now();
+						const taskDuration = taskEndTime - taskStartTime;
+
+						statusPayload.steps[fi].status = singleResult.exitCode === 0 ? "complete" : "failed";
+						statusPayload.steps[fi].endedAt = taskEndTime;
+						statusPayload.steps[fi].durationMs = taskDuration;
+						statusPayload.steps[fi].exitCode = singleResult.exitCode;
+						statusPayload.steps[fi].model = singleResult.model;
+						statusPayload.steps[fi].thinking = resolveEffectiveThinking(singleResult.model, statusPayload.steps[fi].thinking);
+						statusPayload.steps[fi].attemptedModels = singleResult.attemptedModels;
+						statusPayload.steps[fi].modelAttempts = singleResult.modelAttempts;
+						statusPayload.steps[fi].error = singleResult.error;
+						statusPayload.steps[fi].structuredOutput = singleResult.structuredOutput;
+						statusPayload.steps[fi].structuredOutputPath = singleResult.structuredOutputPath;
+						statusPayload.steps[fi].structuredOutputSchemaPath = singleResult.structuredOutputSchemaPath;
+						statusPayload.steps[fi].acceptance = singleResult.acceptance;
+						statusPayload.lastUpdate = taskEndTime;
+						writeStatusPayload();
+
+						appendJsonl(eventsPath, JSON.stringify({
+							type: singleResult.exitCode === 0 ? "subagent.step.completed" : "subagent.step.failed",
+							ts: taskEndTime, runId: id, stepIndex: fi, agent: task.agent,
+							exitCode: singleResult.exitCode, durationMs: taskDuration,
+						}));
+						if (singleResult.completionGuardTriggered) {
+							const event = buildControlEvent({
+								from: statusPayload.steps[fi].activityState,
+								to: "needs_attention",
+								runId: id,
+								agent: task.agent,
+								index: fi,
+								ts: taskEndTime,
+								message: `${task.agent} completed without making edits for an implementation task`,
+								reason: "completion_guard",
+							});
+							appendControlEvent(event);
+						}
+
+						if (singleResult.exitCode !== 0 && failFast) aborted = true;
+						return { ...singleResult, skipped: false };
+					},
+				);
+
+				flatIndex += group.parallel.length;
+
+				for (let t = 0; t < group.parallel.length; t++) {
+					const fi = groupStartFlatIndex + t;
+					const sessionTokens = config.sessionDir
+						? parseSessionTokens(path.join(config.sessionDir, `parallel-${t}`))
+						: null;
+					const taskTokens = sessionTokens ?? tokenUsageFromAttempts(parallelResults[t]?.modelAttempts);
+					if (!taskTokens) continue;
+					statusPayload.steps[fi].tokens = taskTokens;
+					previousCumulativeTokens = {
+						input: previousCumulativeTokens.input + taskTokens.input,
+						output: previousCumulativeTokens.output + taskTokens.output,
+						total: previousCumulativeTokens.total + taskTokens.total,
+					};
+				}
+				statusPayload.totalTokens = { ...previousCumulativeTokens };
+				statusPayload.lastUpdate = Date.now();
+				writeStatusPayload();
+
+				for (const pr of parallelResults) {
+					results.push({
+						agent: pr.agent,
+						output: pr.output,
+						error: pr.error,
+						success: pr.exitCode === 0,
+						exitCode: pr.exitCode,
+						skipped: pr.skipped,
+						sessionFile: pr.sessionFile,
+						intercomTarget: pr.intercomTarget,
+						model: pr.model,
+						attemptedModels: pr.attemptedModels,
+						modelAttempts: pr.modelAttempts,
+						artifactPaths: pr.artifactPaths,
+							structuredOutput: pr.structuredOutput,
+							structuredOutputPath: pr.structuredOutputPath,
+							structuredOutputSchemaPath: pr.structuredOutputSchemaPath,
+							acceptance: pr.acceptance,
+						});
+					}
+				for (let t = 0; t < group.parallel.length; t++) {
+					const outputName = group.parallel[t]?.outputName;
+					if (outputName) outputs[outputName] = outputEntryFromAsyncResult({
+						agent: parallelResults[t]!.agent,
+						output: parallelResults[t]!.output,
+						structuredOutput: parallelResults[t]!.structuredOutput,
+					}, stepIndex);
+				}
+				statusPayload.outputs = outputs;
+
+				previousOutput = aggregateParallelOutputs(
+					parallelResults.map((r) => ({
+					agent: r.agent,
+					output: r.output,
+					exitCode: r.exitCode,
+					error: r.error,
+					model: r.model,
+					attemptedModels: r.attemptedModels,
+				})),
+				);
+				previousOutput = appendParallelWorktreeSummary(previousOutput, worktreeSetup, asyncDir, stepIndex, group);
+
+				appendJsonl(eventsPath, JSON.stringify({
+					type: "subagent.parallel.completed",
+					ts: Date.now(),
+					runId: id,
+					stepIndex,
+					success: parallelResults.every((r) => r.exitCode === 0 || r.exitCode === -1),
+				}));
+
+				if (parallelResults.some((r) => r.exitCode !== 0 && r.exitCode !== -1)) {
+					break;
+				}
+			} finally {
+				if (worktreeSetup) cleanupWorktrees(worktreeSetup);
+			}
+		} else {
+			const seqStep = step as SubagentStep;
+			const stepStartTime = Date.now();
+			statusPayload.currentStep = flatIndex;
+			statusPayload.steps[flatIndex].status = "running";
+			statusPayload.steps[flatIndex].activityState = undefined;
+			statusPayload.activityState = undefined;
+			resetStepLiveDetail(statusPayload.steps[flatIndex]);
+			statusPayload.steps[flatIndex].skills = seqStep.skills;
+			statusPayload.steps[flatIndex].startedAt = stepStartTime;
+			statusPayload.steps[flatIndex].lastActivityAt = stepStartTime;
+			statusPayload.lastActivityAt = stepStartTime;
+			statusPayload.lastUpdate = stepStartTime;
+			statusPayload.outputFile = path.join(asyncDir, `output-${flatIndex}.log`);
+			writeStatusPayload();
+
+			appendJsonl(eventsPath, JSON.stringify({
+				type: "subagent.step.started",
+				ts: stepStartTime,
+				runId: id,
+				stepIndex: flatIndex,
+				agent: seqStep.agent,
+			}));
+
+			const singleResult = await runSingleStep(seqStep, {
+				previousOutput, placeholder, cwd, sessionEnabled,
+				outputs,
+				sessionDir: config.sessionDir,
+				artifactsDir, artifactConfig, id,
+				flatIndex, flatStepCount: flatSteps.length,
+				outputFile: path.join(asyncDir, `output-${flatIndex}.log`),
+				piPackageRoot: config.piPackageRoot,
+				piArgv1: config.piArgv1,
+				childIntercomTarget: config.childIntercomTargets?.[flatIndex],
+				orchestratorIntercomTarget: config.controlIntercomTarget,
+				nestedRoute: config.nestedRoute,
+				registerInterrupt: (interrupt) => {
+					activeChildInterrupt = interrupt;
+				},
+				onAttemptStart: (attempt) => updateStepModel(flatIndex, attempt.model, attempt.thinking),
+				onChildEvent: (event) => updateStepFromChildEvent(flatIndex, event),
+			});
+			if (seqStep.sessionFile) {
+				latestSessionFile = seqStep.sessionFile;
+			}
+
+			previousOutput = singleResult.output;
+			results.push({
+				agent: singleResult.agent,
+				output: singleResult.output,
+				error: singleResult.error,
+				success: singleResult.exitCode === 0,
+				exitCode: singleResult.exitCode,
+				sessionFile: singleResult.sessionFile,
+				intercomTarget: singleResult.intercomTarget,
+				model: singleResult.model,
+				attemptedModels: singleResult.attemptedModels,
+				modelAttempts: singleResult.modelAttempts,
+				artifactPaths: singleResult.artifactPaths,
+				structuredOutput: singleResult.structuredOutput,
+				structuredOutputPath: singleResult.structuredOutputPath,
+				structuredOutputSchemaPath: singleResult.structuredOutputSchemaPath,
+				acceptance: singleResult.acceptance,
+			});
+			if (seqStep.outputName) {
+				outputs[seqStep.outputName] = outputEntryFromAsyncResult({
+					agent: singleResult.agent,
+					output: singleResult.output,
+					structuredOutput: singleResult.structuredOutput,
+				}, stepIndex);
+			}
+			statusPayload.outputs = outputs;
+
+			const cumulativeTokens = config.sessionDir ? parseSessionTokens(config.sessionDir) : null;
+			let stepTokens: TokenUsage | null = cumulativeTokens
+				? {
+						input: cumulativeTokens.input - previousCumulativeTokens.input,
+						output: cumulativeTokens.output - previousCumulativeTokens.output,
+						total: cumulativeTokens.total - previousCumulativeTokens.total,
+					}
+				: null;
+			if (cumulativeTokens) {
+				previousCumulativeTokens = cumulativeTokens;
+			} else {
+				stepTokens = tokenUsageFromAttempts(singleResult.modelAttempts);
+				if (stepTokens) {
+					previousCumulativeTokens = {
+						input: previousCumulativeTokens.input + stepTokens.input,
+						output: previousCumulativeTokens.output + stepTokens.output,
+						total: previousCumulativeTokens.total + stepTokens.total,
+					};
+				}
+			}
+
+			const stepEndTime = Date.now();
+			statusPayload.steps[flatIndex].status = singleResult.exitCode === 0 ? "complete" : "failed";
+			statusPayload.steps[flatIndex].endedAt = stepEndTime;
+			statusPayload.steps[flatIndex].durationMs = stepEndTime - stepStartTime;
+			statusPayload.steps[flatIndex].exitCode = singleResult.exitCode;
+			statusPayload.steps[flatIndex].model = singleResult.model;
+			statusPayload.steps[flatIndex].thinking = resolveEffectiveThinking(singleResult.model, statusPayload.steps[flatIndex].thinking);
+			statusPayload.steps[flatIndex].attemptedModels = singleResult.attemptedModels;
+			statusPayload.steps[flatIndex].modelAttempts = singleResult.modelAttempts;
+			statusPayload.steps[flatIndex].error = singleResult.error;
+			statusPayload.steps[flatIndex].structuredOutput = singleResult.structuredOutput;
+			statusPayload.steps[flatIndex].structuredOutputPath = singleResult.structuredOutputPath;
+			statusPayload.steps[flatIndex].structuredOutputSchemaPath = singleResult.structuredOutputSchemaPath;
+			statusPayload.steps[flatIndex].acceptance = singleResult.acceptance;
+			if (stepTokens) {
+				statusPayload.steps[flatIndex].tokens = stepTokens;
+				statusPayload.totalTokens = { ...previousCumulativeTokens };
+			}
+			statusPayload.lastUpdate = stepEndTime;
+			writeStatusPayload();
+
+			appendJsonl(eventsPath, JSON.stringify({
+				type: singleResult.exitCode === 0 ? "subagent.step.completed" : "subagent.step.failed",
+				ts: stepEndTime,
+				runId: id,
+				stepIndex: flatIndex,
+				agent: seqStep.agent,
+				exitCode: singleResult.exitCode,
+				durationMs: stepEndTime - stepStartTime,
+				tokens: stepTokens,
+			}));
+			if (singleResult.completionGuardTriggered) {
+				const event = buildControlEvent({
+					from: statusPayload.steps[flatIndex].activityState,
+					to: "needs_attention",
+					runId: id,
+					agent: seqStep.agent,
+					index: flatIndex,
+					ts: stepEndTime,
+					message: `${seqStep.agent} completed without making edits for an implementation task`,
+					reason: "completion_guard",
+				});
+				appendControlEvent(event);
+			}
+
+			flatIndex++;
+			if (singleResult.exitCode !== 0) {
+				break;
+			}
+		}
+	}
+
+	// ── Post-completion: finalize output, sharing, result file ──
+	await finalizeRun({
+		results,
+		maxOutput,
+		config,
+		statusPayload,
+		flatSteps,
+		shareEnabled,
+		latestSessionFile,
+		activityTimer,
+		interrupted,
+		id,
+		overallStartTime,
+		eventsPath,
+		logPath,
+		cwd,
+		artifactsDir,
+		asyncDir,
+		resultPath,
+		outputs,
+		taskIndex,
+		totalTasks,
+		writeStatusPayload,
+	});
+}
+
+const configArg = process.argv[2];
+if (configArg) {
+	try {
+		const configJson = fs.readFileSync(configArg, "utf-8");
+		const config = JSON.parse(configJson) as SubagentRunConfig;
+		try {
+			fs.unlinkSync(configArg);
+		} catch {
+			// Temp config cleanup is best effort.
+		}
+		runSubagent(config).catch((runErr) => {
+			console.error("Subagent runner error:", runErr);
+			process.exit(1);
+		});
+	} catch (err) {
+		console.error("Subagent runner error:", err);
+		process.exit(1);
+	}
+} else {
+	let input = "";
+	process.stdin.setEncoding("utf-8");
+	process.stdin.on("data", (chunk) => {
+		input += chunk;
+	});
+	process.stdin.on("end", () => {
+		try {
+			const config = JSON.parse(input) as SubagentRunConfig;
+			runSubagent(config).catch((runErr) => {
+				console.error("Subagent runner error:", runErr);
+				process.exit(1);
+			});
+		} catch (err) {
+			console.error("Subagent runner error:", err);
+			process.exit(1);
+		}
+	});
+}
