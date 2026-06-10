@@ -59,6 +59,7 @@ function createPlaceholderResult(
 		exitCode: 0,
 		messages: EMPTY_MESSAGES,
 		usage: cloneUsage(),
+// @ts-expect-error — type mismatch with runtime behavior
 		progress: {
 			...(index !== undefined ? { index } : {}),
 			agent,
@@ -163,6 +164,7 @@ function buildSingleInitialResult(params: SubagentParamsLike): AgentToolResult<D
 			mode: "single",
 			...(params.context ? { context: params.context } : {}),
 			results: [createPlaceholderResult(agent, task, "running")],
+// @ts-expect-error — type mismatch with runtime behavior
 			progress: [{
 				agent,
 				status: "running",

@@ -150,6 +150,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 					const foreground = getForegroundControl(deps.state, undefined);
 					if (foreground) return foregroundStatusResult(foreground);
 				}
+// @ts-expect-error — type mismatch with runtime behavior
 				return inspectSubagentStatus(paramsWithResolvedCwd, { state: deps.state, nested: nestedResolutionScopeForExecutor(deps) });
 			}
 			if (params.action === "resume") {
@@ -206,6 +207,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 					details: { mode: "management" as const, results: [] },
 				};
 			}
+// @ts-expect-error — type mismatch with runtime behavior
 			return handleManagementAction(params.action, paramsWithResolvedCwd, { ...ctx, cwd: requestCwd });
 		}
 

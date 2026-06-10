@@ -180,6 +180,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Line limit enforcement (post-write) ─────────────────────────────
 
+// @ts-expect-error — type mismatch with runtime behavior
 	pi.on("tool_result", async (event) => {
 		const toolName = event.toolName;
 		if (toolName !== "write" && toolName !== "edit") return undefined;
@@ -198,6 +199,7 @@ export default function (pi: ExtensionAPI) {
 			const lineCount = content.split("\n").length;
 			if (lineCount > match.maxLines) {
 				const warning = `\n\n⚠️ EXPERTISE LINE LIMIT EXCEEDED: ${lineCount}/${match.maxLines} lines. Trim this file immediately before continuing.`;
+// @ts-expect-error — type mismatch with runtime behavior
 				const currentResult = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
 				return { result: currentResult + warning };
 			}

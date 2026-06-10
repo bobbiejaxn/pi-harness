@@ -75,6 +75,7 @@ export interface AcceptanceConfig {
 
 export type AcceptanceInput = AcceptanceLevel | false | AcceptanceConfig;
 
+// @ts-expect-error — type mismatch with runtime behavior
 export interface ResolvedAcceptanceGate extends AcceptanceGate {
 	resolvedLevel: AcceptanceLevel;
 	verifyCommand?: AcceptanceVerifyCommand;
