@@ -21,6 +21,6 @@ describe("nested child Pi process visibility", () => {
 	});
 
 	it("hides background child Pi process windows on Windows", () => {
-		assertNestedPiSpawnHidesWindows("src/runs/background/runner-streaming.ts");
+		assertNestedPiSpawnHidesWindows("src/runs/background/runner-pi-streaming.ts");
 	});
 });
