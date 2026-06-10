@@ -1,6 +1,6 @@
 {
   "name": "pi-harness",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Production-hardened subagent execution engine for pi \u2014 circuit breaker, session learning, execution guard, domain enforcement, cost control",
   "author": "Bobbie Jackson",
   "contributors": [

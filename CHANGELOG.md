@@ -2,6 +2,20 @@
 
 All notable changes to pi-harness are documented here.
 
+## [1.3.1] — 2026-06-09
+
+### Refactor: 4 files under 500 LOC ceiling
+
+Continued paying down technical debt from the manifesto's 500 LOC hard ceiling.
+
+**Extractions:**
+- `subagent-runner.ts`: 1386→114 — extracted `runSubagent` to `runner-impl.ts` (types+CLI shell)
+- `executor-path-runners.ts`: 746→12 — split into `runner-parallel-path.ts` (429) + `runner-single-path.ts` (405)
+- `skills.ts`: 632→167 — extracted internals to `skill-internal.ts` (496)
+- `runner-streaming.ts`: 587→7 — split into `runner-pi-streaming.ts` (347) + `runner-single-step.ts` (368)
+
+**Remaining files over 500 LOC:** 8 (down from 12)
+
 ## [1.3.0] — 2026-06-09
 
 ### Type Safety: Zero tsc errors
